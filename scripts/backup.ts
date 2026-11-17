@@ -1,0 +1,10 @@
+import 'dotenv/config';
+import { backup } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { Database } from '../apps/server/src/database';
+mkdirSync('backups', { recursive: true });
+const db = new Database(process.env.DATABASE_PATH || './data/spoolnest.db');
+const path = `backups/spoolnest-${new Date().toISOString().replace(/[:.]/g, '-')}.db`;
+await backup(db.raw, path);
+db.close();
+console.log(`Backup: ${path}`);
