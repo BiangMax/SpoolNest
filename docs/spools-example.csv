@@ -1,0 +1,3 @@
+brand,productName,material,colorName,colorHex,netG,remainingG,price,location,status,notes
+SUNLU,PLA 白色 1kg,PLA,白色,#FFFFFF,1000,800,60,干燥箱 A,opened,示例格式：请按实际库存修改后导入
+eSUN,PETG 黑色 1kg,PETG,黑色,#000000,1000,620,,干燥箱 B,opened,价格未记录

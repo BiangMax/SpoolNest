@@ -1,0 +1,22 @@
+services:
+  spoolnest:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:4310:4310"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4310
+      DATABASE_PATH: /app/data/spoolnest.db
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN with at least 32 characters in .env}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:4310}
+      BAMBU_EXPERIMENTAL: ${BAMBU_EXPERIMENTAL:-false}
+      BAMBU_REGION: ${BAMBU_REGION:-cn}
+      BAMBU_ACCESS_TOKEN: ${BAMBU_ACCESS_TOKEN:-}
+    volumes:
+      - spoolnest-data:/app/data
+      - spoolnest-backups:/app/backups
+volumes:
+  spoolnest-data:
+  spoolnest-backups:
