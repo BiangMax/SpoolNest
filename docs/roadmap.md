@@ -7,7 +7,7 @@
 - [x] P4 数据库仪表盘、低库存、按维度统计与成本缺失处理
 - [x] P5 CSV、主题、响应式、备份恢复、Docker、文档、CI
 - [x] 核心自动化测试、浏览器桌面/移动与深色检查
-- [ ] GitHub 公开仓库提交与上传
+- [x] GitHub 公开仓库提交与上传（https://github.com/BiangMax/SpoolNest）
 - [ ] 真实 A1 mini / X2D 云端返回验证（需要用户授权与真实设备）
 
-P2 云端勾选仅表示实验适配器和合成测试完成，不代表设备接入验收。P5 Docker 在本机未运行，容器构建与启动由 GitHub Actions 验证。
+P2 云端勾选仅表示实验适配器和合成测试完成，不代表设备接入验收。P5 Docker 在本机未运行；GitHub Actions 已通过容器构建、启动健康检查及 macOS/Ubuntu 测试。
