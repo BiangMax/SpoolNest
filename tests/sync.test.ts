@@ -201,18 +201,20 @@ it('云端库存同步：新增、唯一回链、差异只报告、永不覆盖�
   expect(first.statusCode).toBe(200);
   const r = first.json();
   expect(r.added).toBe(1);
+  expect(r.linkedCount).toBe(2);
   expect(r.differences).toHaveLength(1);
   expect(r.differences[0].localRemainingMg).toBe(806000);
   expect(r.differences[0].cloudRemainingMg).toBe(661000);
-  expect(r.warnings.some((w: string) => w.includes('无法区分'))).toBe(true);
+  expect(r.warnings).toHaveLength(0);
   const spools = store.spools();
   const white = spools.find((s) => s.product.name === 'PLA White')!;
   expect(white.remainingMg).toBe(806000);
   expect(white.cloudSpoolId).toBe(9001);
   expect(spools.find((s) => s.product.name === 'ABS Blue')!.remainingMg).toBe(500000);
-  expect(
-    spools.filter((s) => s.product.name === 'PETG Black').every((s) => s.cloudSpoolId === null),
-  ).toBe(true);
+  // 完全等价的同规格叠加（同克重两卷）：按本地添加顺序确定性对应第一卷
+  const blackLinked = spools.filter((s) => s.product.name === 'PETG Black');
+  expect(blackLinked.filter((s) => s.cloudSpoolId === 9002)).toHaveLength(1);
+  expect(blackLinked.filter((s) => s.cloudSpoolId === null)).toHaveLength(1);
   const grayLinked = spools.filter(
     (s) => s.product.name === 'PETG Gray' && s.cloudSpoolId === 9004,
   );

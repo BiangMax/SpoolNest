@@ -218,11 +218,13 @@ export class Store {
         let chosen: string | null = null;
         if (candidates.length === 1) chosen = candidates[0].id as string;
         else if (candidates.length > 1) {
-          // 同规格多卷：按剩余克重（±1g）唯一命中才回链，无法区分就交人工
+          // 同规格多卷：优先按剩余克重（±1g）唯一命中回链；完全等价的多卷（如同克重
+          // 未拆封官方卷）物理上无法区分，按本地添加顺序确定性对应——它们库存语义等价，
+          // 且同步永不覆盖本地数值，误配仅影响差异报告指向的卷名。
           const byWeight = candidates.filter(
             (c) => Math.abs((c.remaining_mg as number) - remainMg) <= 1000,
           );
-          if (byWeight.length === 1) chosen = byWeight[0].id as string;
+          if (byWeight.length >= 1) chosen = byWeight[0].id as string;
         }
         if (chosen) {
           this.db.run(
@@ -237,7 +239,7 @@ export class Store {
         }
         if (candidates.length > 1) {
           warnings.push(
-            `云端卷 ${hit.id}（${label}）在本地有 ${candidates.length} 卷同规格料卷且剩余克重无法区分，请人工指定对应后重试`,
+            `云端卷 ${hit.id}（${label}）在本地有 ${candidates.length} 卷同规格料卷且剩余克重都无法对应（可能均为云端报告漂移），请人工校准后重试`,
           );
           continue;
         }
