@@ -262,6 +262,15 @@ export class Store {
               old.totalMg !== input.totalMg ||
               JSON.stringify(old.materials.map(({ id, jobId, ...rest }) => rest)) !==
                 JSON.stringify(input.materials);
+            if (!old.printerId && input.printerId) {
+              // 序列号后补：设备关联属于来源快照的一部分，未核对任务允许回填
+              this.db.run(
+                'UPDATE print_job SET printer_id=?,slot_snapshot=?,version=version+1 WHERE id=?',
+                input.printerId,
+                JSON.stringify(this.snapshot(input.printerId, input.startedAt)),
+                old.id,
+              );
+            }
             if (differs) {
               this.db.run(
                 'UPDATE print_job SET print_status=?,total_mg=?,finished_at=?,duration_seconds=?,incomplete=?,review_status=?,version=version+1 WHERE id=?',
