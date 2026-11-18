@@ -170,6 +170,8 @@ async function preferences() {
               @click="store.sync(true)"
             >
               继续历史批次</button
+            ><button class="button" :disabled="store.busy" @click="store.syncSpools()">
+              <RefreshCw :size="15" />同步云端库存</button
             ><button class="button" @click="disconnectOpen = true">
               <Unplug :size="15" />断开授权
             </button></template
@@ -181,8 +183,29 @@ async function preferences() {
             >技术边界与验证步骤<ExternalLink :size="14"
           /></a>
         </div>
+        <div v-if="store.spoolSync" class="callout warning">
+          <Info :size="18" />
+          <div>
+            <p v-if="store.spoolSync.differences.length">
+              克重差异 {{ store.spoolSync.differences.length }}
+              卷（本地数值未覆盖，请人工校准或核对后更正）：
+            </p>
+            <p v-else>云端库存与本地一致，无克重差异。</p>
+            <ul v-if="store.spoolSync.differences.length" class="diff-list">
+              <li v-for="d in store.spoolSync.differences.slice(0, 6)" :key="d.spoolId">
+                {{ d.label }} · 云端 {{ Math.round(d.cloudRemainingMg / 1000) }}g / 本地
+                {{ Math.round(d.localRemainingMg / 1000) }}g
+              </li>
+            </ul>
+            <p v-if="store.spoolSync.differences.length > 6">
+              …等共 {{ store.spoolSync.differences.length }} 卷，全部以后续同步结果为准。
+            </p>
+            <p v-if="store.spoolSync.warnings.length">{{ store.spoolSync.warnings.join('；') }}</p>
+          </div>
+        </div>
         <p class="help-text">
-          每批最多读取 5 页、每页 50 项；重复任务按云端 ID 去重。云端接入不可用时，3MF
+          每批最多读取 5 页、每页 50 项；重复任务按云端 ID
+          去重。云端库存同步只新增本地没有的卷并回链同规格唯一卷，克重差异仅报告、永不覆盖你确认过的本地数值。云端接入不可用时，3MF
           与手动任务仍可正常使用。
         </p>
       </div>

@@ -55,6 +55,38 @@ export const useWorkspace = defineStore('workspace', () => {
       busy.value = false;
     }
   }
+  const spoolSync = ref<{
+    added: number;
+    linkedCount: number;
+    differences: {
+      spoolId: string;
+      label: string;
+      cloudRemainingMg: number;
+      localRemainingMg: number;
+    }[];
+    warnings: string[];
+  } | null>(null);
+  async function syncSpools() {
+    busy.value = true;
+    try {
+      const result = await api<NonNullable<typeof spoolSync.value>>(
+        '/sync/spools',
+        json('POST', {}),
+      );
+      await load();
+      spoolSync.value = result;
+      const parts = [`新增 ${result.added} 卷`, `关联 ${result.linkedCount} 卷`];
+      if (result.differences.length)
+        parts.push(`克重差异 ${result.differences.length} 卷（本地数值未覆盖）`);
+      if (result.warnings.length) parts.push(`提示 ${result.warnings.length} 条`);
+      toast(`云端库存同步完成 · ${parts.join('，')}`);
+    } catch (e) {
+      await load();
+      toast((e as Error).message);
+    } finally {
+      busy.value = false;
+    }
+  }
   return {
     data,
     loading,
@@ -67,9 +99,11 @@ export const useWorkspace = defineStore('workspace', () => {
     jobs,
     printers,
     transactions,
+    spoolSync,
     load,
     toast,
     mutate,
     sync,
+    syncSpools,
   };
 });
