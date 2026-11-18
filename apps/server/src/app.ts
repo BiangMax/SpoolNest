@@ -192,7 +192,7 @@ export function createApp(options: AppOptions = {}) {
     const body = z.object({ acknowledgeExperimental: z.literal(true) }).parse(req.body);
     if (!options.experimental || !adapter.configured)
       throw new DomainError(
-        '请先在本机设置 BAMBU_EXPERIMENTAL=true 和 BAMBU_ACCESS_TOKEN，再重启服务',
+        '请先在服务环境中设置 BAMBU_EXPERIMENTAL=true 和 BAMBU_ACCESS_TOKEN，再重启服务',
       );
     db.run("UPDATE integration_config SET enabled=1 WHERE id='bambu_cloud'");
     db.run("UPDATE sync_state SET status='ready',error=NULL WHERE id='bambu_cloud'");

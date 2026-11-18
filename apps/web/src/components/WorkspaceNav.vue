@@ -63,7 +63,7 @@ const nav = [
     >
     <div class="profile">
       <span class="profile-avatar"><ShieldCheck :size="17" /></span>
-      <div><strong>本地工作空间</strong><small>单用户 · v0.1</small></div>
+      <div><strong>工作空间</strong><small>单用户 · v0.1</small></div>
     </div>
   </div>
 </template>

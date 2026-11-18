@@ -18,7 +18,7 @@ const store = useWorkspace(),
   route = useRoute(),
   router = useRouter(),
   mobileOpen = ref(false),
-  dark = ref(localStorage.getItem('spoolnest-theme') === 'dark'),
+  dark = ref(localStorage.getItem('spoolnest-theme') !== 'light'),
   search = ref(''),
   token = ref(''),
   menuTrigger = ref<HTMLButtonElement>();
@@ -27,12 +27,14 @@ function closeDesktopMenu() {
   if (!mobileViewport.matches) mobileOpen.value = false;
 }
 onUnmounted(() => mobileViewport.removeEventListener('change', closeDesktopMenu));
-function theme() {
-  document.documentElement.dataset.theme = dark.value ? 'dark' : 'light';
-  localStorage.setItem('spoolnest-theme', dark.value ? 'dark' : 'light');
+document.documentElement.dataset.theme = dark.value ? 'dark' : 'light';
+function toggleTheme() {
+  dark.value = !dark.value;
+  const theme = dark.value ? 'dark' : 'light';
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('spoolnest-theme', theme);
 }
 onMounted(() => {
-  theme();
   mobileViewport.addEventListener('change', closeDesktopMenu);
   void store.load();
 });
@@ -89,15 +91,12 @@ function unlock() {
           </form>
           <RouterLink to="/settings" class="connection-label"
             ><span class="status-dot" :class="store.data?.sync.enabled ? 'green' : 'gray'" />{{
-              store.data?.sync.enabled ? '云端已启用' : '本地模式'
+              store.data?.sync.enabled ? '拓竹同步已启用' : '拓竹同步未启用'
             }}</RouterLink
           ><span class="top-divider" /><button
             class="icon-button"
             :aria-label="dark ? '切换浅色主题' : '切换深色主题'"
-            @click="
-              dark = !dark;
-              theme();
-            "
+            @click="toggleTheme"
           >
             <Sun v-if="dark" :size="19" /><Moon v-else :size="19" />
           </button>
@@ -107,7 +106,7 @@ function unlock() {
         <div v-if="store.authRequired" class="auth-card panel">
           <ShieldCheck :size="32" />
           <h1>打开你的工作空间</h1>
-          <p class="muted">此服务已开启访问保护，请输入本机配置的管理员令牌。</p>
+          <p class="muted">此服务已开启访问保护，请输入服务配置的管理员令牌。</p>
           <form @submit.prevent="unlock">
             <input
               v-model="token"

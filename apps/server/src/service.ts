@@ -240,7 +240,7 @@ export class Store {
         }
         if (candidates.length > 1) {
           warnings.push(
-            `云端卷 ${hit.id}（${label}）在本地有 ${candidates.length} 卷同规格料卷且剩余克重都无法对应（可能均为云端报告漂移），请人工校准后重试`,
+            `云端卷 ${hit.id}（${label}）在 SpoolNest 库存中有 ${candidates.length} 卷同规格料卷且剩余克重都无法对应（可能均为云端报告漂移），请人工校准后重试`,
           );
           continue;
         }

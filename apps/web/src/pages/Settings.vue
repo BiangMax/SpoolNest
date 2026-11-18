@@ -96,7 +96,7 @@ async function preferences() {
 }
 </script>
 <template>
-  <PageHeading title="系统设置" description="配置云端连接、库存提醒和本地备份。">
+  <PageHeading title="系统设置" description="配置云端连接、库存提醒和数据备份。">
     <span class="badge subtle"><ShieldCheck :size="14" />单用户 · 自托管</span>
   </PageHeading>
   <div class="settings-layout">
@@ -112,7 +112,7 @@ async function preferences() {
             <span class="settings-icon"><Cloud :size="22" /></span>
             <div>
               <h2>拓竹云端连接 <span class="badge warning">实验性</span></h2>
-              <p>正常云端模式下读取历史任务，不发送打印控制指令。</p>
+              <p>从拓竹云端读取历史任务，不发送打印控制指令。</p>
             </div>
           </div>
         </div>
@@ -129,25 +129,16 @@ async function preferences() {
               >最近成功同步<strong>{{ date(store.data?.sync.lastSuccessAt || null) }}</strong></span
             ><span
               >授权配置<strong>{{
-                store.data?.sync.configured ? '本机环境已配置' : '尚未配置'
+                store.data?.sync.configured ? '已配置' : '尚未配置'
               }}</strong></span
             >
           </div>
           <div v-if="store.data?.sync.error" class="error-banner">{{ store.data.sync.error }}</div>
-          <div class="callout warning">
-            <Info :size="18" />
-            <p>
-              此适配器依据社区研究的非公开接口实现，并非官方稳定 API。已完成源码与解析器验证；A1
-              mini、X2D 的账户可访问范围、材料明细与喷嘴映射仍需你的真实任务验证。
-            </p>
-          </div>
           <div class="setup-steps">
             <div>
               <span>1</span>
               <p>
-                在本机 <code>.env</code> 设置 <code>BAMBU_EXPERIMENTAL=true</code>、<code
-                  >BAMBU_REGION</code
-                >
+                在服务环境中设置 <code>BAMBU_EXPERIMENTAL=true</code>、<code>BAMBU_REGION</code>
                 与你授权的 <code>BAMBU_ACCESS_TOKEN</code>。
               </p>
             </div>
@@ -210,7 +201,7 @@ async function preferences() {
               </p>
               <p v-if="store.spoolSync.differences.length">
                 克重差异 {{ store.spoolSync.differences.length }}
-                卷，核对后点击“同步”，将这一卷的本地余量更新为右侧云端报告值，并记录校准流水。
+                卷，核对后点击“同步”，将该卷的库存余量更新为右侧云端报告值，并记录校准流水。
               </p>
               <p v-else-if="!store.spoolSync.localOnly.some((s) => !s.kept)">
                 本次对照已无待处理的差异。
@@ -226,12 +217,12 @@ async function preferences() {
                   </h3>
                   <div class="cloud-diff-comparison">
                     <div>
-                      <span>本地 · 旧数据</span
+                      <span>SpoolNest 库存余量</span
                       ><strong>{{ grams(d.localRemainingMg) }} <small>g</small></strong>
                     </div>
                     <ArrowRight :size="20" aria-hidden="true" />
                     <div>
-                      <span>云端 · 新数据</span
+                      <span>拓竹云端报告余量</span
                       ><strong>{{ grams(d.cloudRemainingMg) }} <small>g</small></strong>
                     </div>
                     <button
@@ -246,9 +237,9 @@ async function preferences() {
                 </article>
               </div>
               <div v-if="store.spoolSync.localOnly.length" class="cloud-local-only">
-                <h3>本地独有 / 尚未对应的料卷</h3>
+                <h3>未与云端对应的库存料卷</h3>
                 <p>
-                  这些料卷未关联云端，或本次云端未返回。请逐卷裁定：保留为本地库存，或归档移出在库统计。归档会保留历史，可在“已归档”库存恢复。
+                  这些料卷未关联云端，或本次云端未返回。请逐卷选择保留在库或归档。归档会保留历史，可在“已归档”库存恢复。
                 </p>
                 <div class="cloud-diff-list">
                   <article
@@ -270,10 +261,10 @@ async function preferences() {
                         <button
                           class="button"
                           :disabled="store.busy || d.kept"
-                          :aria-label="`保留本地料卷 #${shortId(d.spoolId)}`"
+                          :aria-label="`保留库存料卷 #${shortId(d.spoolId)}`"
                           @click="store.decideLocalSpool(d, 'keep')"
                         >
-                          {{ d.kept ? '已保留本地' : '保留本地' }}
+                          {{ d.kept ? '已保留在库' : '保留在库' }}
                         </button>
                         <button
                           class="button"
@@ -296,7 +287,7 @@ async function preferences() {
           </div>
           <p class="help-text">
             每批最多读取 5 页、每页 50 项；重复任务按云端 ID
-            去重。读取云端库存会新增缺失料卷并关联已有料卷；已有重量差异需逐卷点击“同步”才会更新本地，不会修改云端，也不会核对历史打印任务。云端接入不可用时，3MF
+            去重。读取云端库存会新增缺失料卷并关联已有料卷；逐卷点击“同步”即可更新库存余量，不会修改云端，也不会核对历史打印任务。云端接入不可用时，3MF
             与手动任务仍可正常使用。
           </p>
         </div>
@@ -355,13 +346,20 @@ async function preferences() {
       <section class="security-note">
         <ShieldCheck :size="22" />
         <div>
-          <h3>安全从本地开始</h3>
+          <h3>访问与凭据安全</h3>
           <p>
             默认仅监听 127.0.0.1。对外监听必须配置强管理员令牌。令牌不会写入数据库或
             GitHub；请自行保护 .env 和数据库备份。
           </p>
         </div>
       </section>
+      <div class="callout warning">
+        <Info :size="18" />
+        <p>
+          此适配器依据社区研究的非公开接口实现，并非官方稳定 API。已完成源码与解析器验证；A1
+          mini、X2D 的账户可访问范围、材料明细与喷嘴映射仍需你的真实任务验证。
+        </p>
+      </div>
     </div>
   </div>
   <Modal
@@ -374,7 +372,7 @@ async function preferences() {
     </div>
     <label class="checkbox-label"
       ><input v-model="ack" type="checkbox" />我了解非公开接口风险，授权 SpoolNest
-      使用本机配置的令牌只读获取任务。</label
+      使用服务配置的令牌只读获取任务。</label
     >
     <div v-if="error" class="error-banner">{{ error }}</div>
     <template #footer
@@ -388,7 +386,7 @@ async function preferences() {
     title="断开云端授权？"
     description="保留历史任务和库存，禁用后续云端同步。"
     ><p>
-      将清除当前进程的令牌。请同时删除本机 .env 中的 BAMBU_ACCESS_TOKEN；应用不会改写你的环境文件。
+      将清除当前进程的令牌。请从部署环境或 .env 中移除 BAMBU_ACCESS_TOKEN，以免服务重启后重新读取。
     </p>
     <template #footer
       ><button class="button" @click="disconnectOpen = false">取消</button

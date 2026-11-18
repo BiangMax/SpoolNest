@@ -106,7 +106,7 @@ export const useWorkspace = defineStore('workspace', () => {
       await load();
       toast(
         decision === 'keep'
-          ? '已保留本地料卷，后续对照会记住此决定'
+          ? '料卷已保留在库，后续对照会记住此决定'
           : '料卷已归档，历史和流水已保留，可在已归档库存恢复',
       );
     } catch (e) {
@@ -159,10 +159,10 @@ export const useWorkspace = defineStore('workspace', () => {
       spoolSync.value = result;
       const parts = [`新增 ${result.added} 卷`, `关联 ${result.linkedCount} 卷`];
       if (result.differences.length)
-        parts.push(`克重差异 ${result.differences.length} 卷（本地数值未覆盖）`);
+        parts.push(`克重差异 ${result.differences.length} 卷（库存余量未改动）`);
       if (result.warnings.length) parts.push(`提示 ${result.warnings.length} 条`);
       if (result.localOnly.some((s) => !s.kept))
-        parts.push(`本地待裁定 ${result.localOnly.filter((s) => !s.kept).length} 卷`);
+        parts.push(`库存待处理 ${result.localOnly.filter((s) => !s.kept).length} 卷`);
       toast(`云端库存同步完成 · ${parts.join('，')}`);
     } catch (e) {
       await load();
