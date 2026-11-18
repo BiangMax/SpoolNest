@@ -28,6 +28,7 @@ const store = useWorkspace(),
   saving = ref(false),
   backupBusy = ref(false),
   disconnectOpen = ref(false);
+const backupFormat = computed(() => store.data?.backupFormat ?? 'db');
 const statusLabels: Record<string, string> = {
   unavailable: '当前数据源未启用',
   ready: '已启用 · 待首次验证',
@@ -74,7 +75,10 @@ async function disconnect() {
 async function backup() {
   backupBusy.value = true;
   try {
-    await download('/backup', `spoolnest-${new Date().toISOString().slice(0, 10)}.db`);
+    await download(
+      '/backup',
+      `spoolnest-${new Date().toISOString().slice(0, 10)}.${backupFormat.value}`,
+    );
     store.toast('数据库备份已下载');
   } catch (e) {
     store.toast((e as Error).message);
@@ -97,7 +101,9 @@ async function preferences() {
 </script>
 <template>
   <PageHeading title="系统设置" description="配置云端连接、库存提醒和数据备份。">
-    <span class="badge subtle"><ShieldCheck :size="14" />单用户 · 自托管</span>
+    <span class="badge subtle">
+      <ShieldCheck :size="14" />单用户 · {{ backupFormat === 'sql' ? 'Cloudflare' : '自托管' }}
+    </span>
   </PageHeading>
   <div class="settings-layout">
     <nav class="settings-index" aria-label="设置分区">
@@ -328,7 +334,8 @@ async function preferences() {
           <div class="settings-row">
             <div>
               <strong>下载完整 SQLite 备份</strong>
-              <p>使用数据库在线备份 API，保证一致性。</p>
+              <p v-if="backupFormat === 'sql'">导出数据库结构和数据，保存为 SQL 文件。</p>
+              <p v-else>使用数据库在线备份 API，保证一致性。</p>
             </div>
             <button class="button" :disabled="backupBusy" @click="backup">
               <Download :size="16" />{{ backupBusy ? '备份中…' : '下载备份' }}
@@ -337,8 +344,14 @@ async function preferences() {
           <div class="settings-row">
             <div>
               <strong>从备份恢复</strong>
-              <p>停止服务后，在终端运行恢复命令；原数据库会另存备份。</p>
-              <code class="code-block">npm run restore -- /path/backup.db --server-stopped</code>
+              <template v-if="backupFormat === 'sql'">
+                <p>在终端运行以下命令，将备份导入一个新的 SQLite 数据库文件。</p>
+                <code class="code-block">sqlite3 -bail restored.db &lt; spoolnest-backup.sql</code>
+              </template>
+              <template v-else>
+                <p>停止服务后，在终端运行恢复命令，原数据库会另存备份。</p>
+                <code class="code-block">npm run restore -- /path/backup.db --server-stopped</code>
+              </template>
             </div>
           </div>
         </div>
@@ -347,7 +360,11 @@ async function preferences() {
         <ShieldCheck :size="22" />
         <div>
           <h3>访问与凭据安全</h3>
-          <p>
+          <p v-if="backupFormat === 'sql'">
+            工作空间由 Cloudflare Access
+            保护。拓竹令牌通过服务端密钥配置，请妥善保管下载的数据库备份。
+          </p>
+          <p v-else>
             默认仅监听 127.0.0.1。对外监听必须配置强管理员令牌。令牌不会写入数据库或
             GitHub；请自行保护 .env 和数据库备份。
           </p>

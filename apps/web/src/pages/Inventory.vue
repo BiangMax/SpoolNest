@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { z } from 'zod';
 import {
   Plus,
   Search,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-vue-next';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
+import { useViewPreference } from '../lib/view-preferences';
 import { grams, weight, date, shortId, money } from '../lib/format';
 import { download, api } from '../lib/api';
 import { type Spool, transactionLabels } from '../../../../packages/shared/src';
@@ -28,14 +30,21 @@ import EmptyState from '../components/EmptyState.vue';
 import ColorFilter from '../components/ColorFilter.vue';
 const store = useWorkspace(),
   route = useRoute(),
-  search = ref(String(route.query.q || '')),
-  material = ref(''),
-  brand = ref(''),
-  status = ref('active'),
-  color = ref(''),
-  sort = ref('newest'),
-  grouping = ref('brand'),
-  collapsedBrands = ref(new Set<string>()),
+  router = useRouter(),
+  savedSearch = useViewPreference('inventory.search', z.string().catch('')),
+  material = useViewPreference('inventory.material', z.string().catch('')),
+  brand = useViewPreference('inventory.brand', z.string().catch('')),
+  status = useViewPreference(
+    'inventory.status',
+    z.enum(['active', 'sealed', 'opened', 'empty', 'archived', 'all']).catch('active'),
+  ),
+  color = useViewPreference('inventory.color', z.string().catch('')),
+  sort = useViewPreference(
+    'inventory.sort',
+    z.enum(['newest', 'changed', 'weight', 'brand']).catch('newest'),
+  ),
+  grouping = useViewPreference('inventory.grouping', z.enum(['brand', 'none']).catch('brand')),
+  collapsedBrands = useViewPreference('inventory.collapsed-brands', z.array(z.string()).catch([])),
   formOpen = ref(false),
   editing = ref<Spool | null>(null),
   detailId = ref<string | null>(null),
@@ -46,16 +55,66 @@ const store = useWorkspace(),
   calSource = ref('weighed'),
   error = ref(''),
   saving = ref(false);
+const linkedSearch = computed(() => (typeof route.query.q === 'string' ? route.query.q : null));
+const search = computed({
+  get: () => linkedSearch.value ?? savedSearch.value,
+  set: (value: string) => {
+    savedSearch.value = value;
+    if (linkedSearch.value !== null) {
+      const query = { ...route.query };
+      delete query.q;
+      void router.replace({ query });
+    }
+  },
+});
+const linkedSpool = computed(() => store.spools.find((spool) => spool.id === linkedSearch.value));
 watch(
-  () => route.query.q,
-  (q) => (search.value = String(q || '')),
+  linkedSearch,
+  (value) => {
+    if (value !== null && !linkedSpool.value) savedSearch.value = value;
+  },
+  { immediate: true },
+);
+const materials = computed(() => [...new Set(store.spools.map((s) => s.product.material))]);
+const brands = computed(() => [...new Set(store.spools.map((s) => s.product.brand))]);
+const colors = computed(() => [...new Set(store.spools.map((s) => s.product.colorHex))]);
+watch(
+  [materials, brands, colors],
+  ([materials, brands, colors]) => {
+    if (!materials.includes(material.value)) material.value = '';
+    if (!brands.includes(brand.value)) brand.value = '';
+    if (!colors.includes(color.value)) color.value = '';
+  },
+  { immediate: true },
 );
 const detail = computed(() => store.spools.find((s) => s.id === detailId.value));
 const allWeight = computed(() =>
   store.spools.filter((s) => s.status !== 'archived').reduce((s, x) => s + x.remainingMg, 0),
 );
-const filtered = computed(() =>
-  store.spools
+const groupedByBrand = computed(() => grouping.value === 'brand' && sort.value !== 'changed');
+const historicalChanges = computed(() => {
+  const latest = new Map<string, string>();
+  for (const transaction of store.transactions) {
+    if (transaction.deltaMg === 0 && transaction.kind !== 'initial') continue;
+    if (transaction.createdAt > (latest.get(transaction.spoolId) ?? ''))
+      latest.set(transaction.spoolId, transaction.createdAt);
+  }
+  return latest;
+});
+function compareLatestChange(a: Spool, b: Spool) {
+  const aBatch = a.lastChangeBatch ?? 0;
+  const bBatch = b.lastChangeBatch ?? 0;
+  if (aBatch !== bBatch) return bBatch - aBatch;
+  if (aBatch === 0) {
+    const aTime = historicalChanges.value.get(a.id) ?? a.createdAt;
+    const bTime = historicalChanges.value.get(b.id) ?? b.createdAt;
+    if (aTime !== bTime) return bTime.localeCompare(aTime);
+  }
+  return a.remainingMg - b.remainingMg || a.id.localeCompare(b.id);
+}
+const filtered = computed(() => {
+  if (linkedSpool.value) return [linkedSpool.value];
+  return store.spools
     .filter(
       (s) =>
         (status.value === 'all' ||
@@ -67,16 +126,16 @@ const filtered = computed(() =>
           .toLowerCase()
           .includes(search.value.toLowerCase()),
     )
-    .sort((a, b) =>
-      sort.value === 'weight'
-        ? a.remainingMg - b.remainingMg
-        : sort.value === 'brand'
-          ? a.product.brand.localeCompare(b.product.brand)
-          : b.createdAt.localeCompare(a.createdAt),
-    ),
-);
+    .sort((a, b) => {
+      if (sort.value === 'changed') return compareLatestChange(a, b);
+      if (sort.value === 'weight') return a.remainingMg - b.remainingMg;
+      if (sort.value === 'brand') return a.product.brand.localeCompare(b.product.brand);
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+});
 const groups = computed(() => {
-  if (grouping.value === 'none') return [{ brand: '', spools: filtered.value, remainingMg: 0 }];
+  if (!groupedByBrand.value || linkedSpool.value)
+    return [{ brand: '', spools: filtered.value, remainingMg: 0 }];
   const byBrand = new Map<string, { brand: string; spools: Spool[]; remainingMg: number }>();
   for (const spool of filtered.value) {
     const key = spool.product.brand;
@@ -91,8 +150,9 @@ const groups = computed(() => {
   return [...byBrand.values()].sort((a, b) => a.brand.localeCompare(b.brand, 'zh-CN'));
 });
 function toggleBrand(brand: string) {
-  if (collapsedBrands.value.has(brand)) collapsedBrands.value.delete(brand);
-  else collapsedBrands.value.add(brand);
+  collapsedBrands.value = collapsedBrands.value.includes(brand)
+    ? collapsedBrands.value.filter((saved) => saved !== brand)
+    : [...collapsedBrands.value, brand];
 }
 function open(s: Spool) {
   detailId.value = s.id;
@@ -203,19 +263,16 @@ async function exportCsv() {
       </div>
       <select v-model="material" aria-label="按材质筛选">
         <option value="">所有材质</option>
-        <option v-for="m in [...new Set(store.spools.map((s) => s.product.material))]" :key="m">
+        <option v-for="m in materials" :key="m" :value="m">
           {{ m }}
         </option></select
       ><select v-model="brand" aria-label="按品牌筛选">
         <option value="">所有品牌</option>
-        <option v-for="b in [...new Set(store.spools.map((s) => s.product.brand))]" :key="b">
+        <option v-for="b in brands" :key="b" :value="b">
           {{ b }}
         </option>
       </select>
-      <ColorFilter
-        v-model="color"
-        :colors="[...new Set(store.spools.map((s) => s.product.colorHex))]"
-      />
+      <ColorFilter v-model="color" :colors="colors" />
       <select v-model="status" aria-label="库存状态">
         <option value="active">在库耗材</option>
         <option value="sealed">未开封</option>
@@ -225,6 +282,7 @@ async function exportCsv() {
         <option value="all">全部状态</option></select
       ><select v-model="sort" aria-label="库存排序">
         <option value="newest">最近添加</option>
+        <option value="changed">最新变动</option>
         <option value="weight">余量从低到高</option>
         <option value="brand">品牌排序</option>
       </select>
@@ -232,7 +290,9 @@ async function exportCsv() {
         type="button"
         class="brand-group-switch"
         role="switch"
-        :aria-checked="grouping === 'brand'"
+        :aria-checked="groupedByBrand"
+        :disabled="sort === 'changed'"
+        :title="sort === 'changed' ? '最新变动按所有品牌一起排序' : undefined"
         @click="grouping = grouping === 'brand' ? 'none' : 'brand'"
       >
         <Boxes :size="14" aria-hidden="true" />按品牌分组
@@ -242,21 +302,21 @@ async function exportCsv() {
   </section>
   <div v-if="filtered.length" class="inventory-groups">
     <section v-for="group in groups" :key="group.brand" class="inventory-group">
-      <h2 v-if="grouping === 'brand'" class="inventory-group-heading">
+      <h2 v-if="groupedByBrand && !linkedSpool" class="inventory-group-heading">
         <button
           class="inventory-group-toggle"
-          :aria-expanded="!collapsedBrands.has(group.brand)"
+          :aria-expanded="!collapsedBrands.includes(group.brand)"
           :aria-controls="`brand-spools-${encodeURIComponent(group.brand)}`"
           @click="toggleBrand(group.brand)"
         >
-          <ChevronDown :size="18" :class="{ collapsed: collapsedBrands.has(group.brand) }" />
+          <ChevronDown :size="18" :class="{ collapsed: collapsedBrands.includes(group.brand) }" />
           <span class="inventory-group-name">{{ group.brand || '未填写品牌' }}</span>
           <span class="badge neutral">{{ group.spools.length }} 卷</span>
           <span class="inventory-group-weight">剩余 {{ weight(group.remainingMg) }}</span>
         </button>
       </h2>
       <div
-        v-show="grouping === 'none' || !collapsedBrands.has(group.brand)"
+        v-show="!groupedByBrand || linkedSpool || !collapsedBrands.includes(group.brand)"
         :id="`brand-spools-${encodeURIComponent(group.brand)}`"
         class="spool-grid"
       >
@@ -316,7 +376,7 @@ async function exportCsv() {
             #{{ shortId(s.id) }}<span v-if="s.installed.length" class="installed-dot">已安装</span>
           </div></button
         ><button
-          v-if="grouping === 'none'"
+          v-if="!groupedByBrand"
           class="add-spool-card"
           @click="
             editing = null;

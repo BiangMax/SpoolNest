@@ -611,7 +611,13 @@ code {
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.85fr) minmax(285px, 1fr);
+  align-items: start;
   gap: 22px;
+}
+.dashboard-column {
+  display: grid;
+  gap: inherit;
+  min-width: 0;
 }
 .pending-list {
   padding: 0 23px 8px;
@@ -731,16 +737,11 @@ code {
   color: var(--secondary);
 }
 .distribution-panel {
-  display: flex;
-  flex-direction: column;
   background: var(--figure);
   color: var(--figure-text);
   --muted: var(--figure-muted);
   --secondary: var(--figure-muted);
-  --border: #526458;
-}
-.distribution-panel .panel-bottom-link {
-  margin-top: auto;
+  --border: var(--figure-border);
 }
 .mini-empty {
   padding: 30px 25px 42px;
@@ -2437,14 +2438,13 @@ tbody tr:hover {
   overflow-wrap: anywhere;
 }
 .composition {
-  flex: 1;
   display: flex;
   flex-wrap: wrap;
   align-content: center;
   align-items: center;
   justify-content: center;
   gap: var(--space-5);
-  padding: 8px var(--space-6) var(--space-6);
+  padding: var(--space-4) var(--space-6) var(--space-6);
 }
 .material-ring {
   width: clamp(125px, 10vw, 162px);
@@ -2485,8 +2485,24 @@ tbody tr:hover {
   min-width: min(135px, 100%);
 }
 .distribution-panel .panel-bottom-link:hover {
-  background: #ffffff0c;
+  background: var(--figure-hover);
   color: var(--figure-text);
+}
+[data-theme='light'] .model-thumbnail {
+  background: radial-gradient(circle, #e5ebe3, #c7d2c8);
+  border-color: var(--border-strong);
+}
+[data-theme='light'] .model-thumbnail img {
+  filter: drop-shadow(0 1px 1px #243a3380);
+}
+[data-theme='light'] .printer-illustration {
+  border-color: var(--border-strong);
+}
+[data-theme='light'] .printer-illustration svg {
+  stroke-width: 1.8;
+}
+[data-theme='light'] .color-dot {
+  border-color: var(--border-strong);
 }
 @media (max-width: 760px) {
   .global-search {
@@ -2673,9 +2689,6 @@ table,
   }
   .dashboard-grid {
     grid-template-columns: 1fr;
-  }
-  .distribution-panel {
-    min-height: 270px;
   }
   .device-strip {
     align-items: flex-start;

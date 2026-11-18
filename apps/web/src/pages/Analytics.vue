@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { z } from 'zod';
 import { ChartNoAxesCombined, ArrowDownRight, Coins, Scale, CalendarDays } from 'lucide-vue-next';
 import MetricCard from '../components/MetricCard.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
+import { useViewPreference } from '../lib/view-preferences';
 import { grams, weight, money, dayKey, date, shortId } from '../lib/format';
 import { type Transaction, transactionLabels } from '../../../../packages/shared/src';
 import EmptyState from '../components/EmptyState.vue';
 const store = useWorkspace(),
-  dimension = ref('material'),
-  from = ref(''),
-  to = ref('');
+  dimension = useViewPreference(
+    'analytics.dimension',
+    z
+      .enum(['material', 'brand', 'printer', 'color', 'spool', 'day', 'week', 'month', 'year'])
+      .catch('material'),
+  ),
+  from = useViewPreference('analytics.from', z.iso.date().catch('')),
+  to = useViewPreference('analytics.to', z.iso.date().catch(''));
 const records = computed(() =>
   store.transactions.filter(
     (t) =>

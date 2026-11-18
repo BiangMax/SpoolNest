@@ -112,166 +112,170 @@ const greeting = computed(() =>
     </MetricCard>
   </div>
   <div class="dashboard-grid">
-    <section class="panel pending-panel">
-      <div class="panel-heading">
-        <div>
-          <h2>
-            待核对任务<span class="heading-count">{{ pending.length }}</span>
-          </h2>
-          <p>选择实际使用的料卷，完成库存更新。</p>
-        </div>
-        <RouterLink to="/jobs" class="text-link">全部任务<ArrowUpRight :size="15" /></RouterLink>
-      </div>
-      <div v-if="pending.length" class="pending-list">
-        <div v-for="j in pending.slice(0, 4)" :key="j.id" class="pending-row">
-          <div class="model-thumbnail">
-            <img
-              v-if="j.thumbnail"
-              :src="j.thumbnail"
-              alt=""
-              loading="lazy"
-              referrerpolicy="no-referrer"
-            /><Box v-else :size="24" stroke-width="1.5" />
+    <div class="dashboard-column">
+      <section class="panel pending-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>
+              待核对任务<span class="heading-count">{{ pending.length }}</span>
+            </h2>
+            <p>选择实际使用的料卷，完成库存更新。</p>
           </div>
-          <div class="grow">
-            <strong>{{ j.name }}</strong><small
-              >{{ j.printerName || '设备未关联' }} <span>·</span>
-              {{ date(j.startedAt, store.data?.settings.timezone) }}</small
-            >
-            <div class="inline-meta material-chips">
-              <span v-for="m in j.materials" :key="m.id"
-                ><i class="color-dot" :style="{ background: m.colorHex || '#ccc' }" />{{
-                  m.material || '待确认'
-                }}
-                <b>{{ m.suggestedMg === null ? '?' : grams(m.suggestedMg) }}g</b></span
+          <RouterLink to="/jobs" class="text-link">全部任务<ArrowUpRight :size="15" /></RouterLink>
+        </div>
+        <div v-if="pending.length" class="pending-list">
+          <div v-for="j in pending.slice(0, 4)" :key="j.id" class="pending-row">
+            <div class="model-thumbnail">
+              <img
+                v-if="j.thumbnail"
+                :src="j.thumbnail"
+                alt=""
+                loading="lazy"
+                referrerpolicy="no-referrer"
+              /><Box v-else :size="24" stroke-width="1.5" />
+            </div>
+            <div class="grow">
+              <strong>{{ j.name }}</strong><small
+                >{{ j.printerName || '设备未关联' }} <span>·</span>
+                {{ date(j.startedAt, store.data?.settings.timezone) }}</small
               >
+              <div class="inline-meta material-chips">
+                <span v-for="m in j.materials" :key="m.id"
+                  ><i class="color-dot" :style="{ background: m.colorHex || '#ccc' }" />{{
+                    m.material || '待确认'
+                  }}
+                  <b>{{ m.suggestedMg === null ? '?' : grams(m.suggestedMg) }}g</b></span
+                >
+              </div>
+            </div>
+            <button class="button small review-button" @click="store.reviewJob = j">
+              核对耗材<ArrowRight :size="14" />
+            </button>
+          </div>
+        </div>
+        <EmptyState
+          :icon="CheckCheck"
+          v-else
+          :title="store.jobs.length ? '全部核对完成' : '尚无打印任务'"
+          :description="
+            store.jobs.length
+              ? '已核对的耗材用量可在打印记录中查看。'
+              : '导入切片文件或手动新增任务，再核对实际使用的料卷。'
+          "
+          ><RouterLink to="/jobs" class="button small"
+            >{{ store.jobs.length ? '查看打印记录' : '添加打印任务'
+            }}<ArrowRight :size="14" /></RouterLink
+        ></EmptyState>
+        <div class="panel-note"><CheckCheck :size="15" />只有你确认后，库存才会变化。</div>
+      </section>
+      <section class="panel recent-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>最近打印</h2>
+            <p>最近添加的五项打印任务</p>
+          </div>
+          <RouterLink to="/jobs" class="text-link">查看全部<ArrowUpRight :size="15" /></RouterLink>
+        </div>
+        <div v-if="store.jobs.length" class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>任务名称</th>
+                <th>打印机</th>
+                <th>打印结果</th>
+                <th class="align-right">报告用量</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="j in store.jobs.slice(0, 5)" :key="j.id">
+                <td>
+                  <strong>{{ j.name }}</strong><small>{{
+                    date(j.startedAt, store.data?.settings.timezone)
+                  }}</small>
+                </td>
+                <td>{{ j.printerName || '—' }}</td>
+                <td>
+                  <span
+                    class="badge"
+                    :class="j.printStatus === 'completed' ? 'success' : 'neutral'"
+                    >{{ printLabels[j.printStatus] }}</span
+                  >
+                </td>
+                <td class="align-right">
+                  {{ j.totalMg === null ? '待补充' : grams(j.totalMg) + ' g' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="mini-empty">
+          <Box :size="25" />
+          <p>还没有打印任务。</p>
+        </div>
+      </section>
+    </div>
+    <div class="dashboard-column">
+      <section class="panel distribution-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>库存分布</h2>
+            <p>按材料类型 · 剩余重量</p>
+          </div>
+          <Layers3 :size="18" class="muted" />
+        </div>
+        <div class="composition">
+          <div class="material-ring" :style="{ background: distribution }">
+            <div>
+              <small>总余量</small><strong>{{ weight(remaining) }}</strong>
             </div>
           </div>
-          <button class="button small review-button" @click="store.reviewJob = j">
-            核对耗材<ArrowRight :size="14" />
-          </button>
+          <div v-if="materials.length" class="material-legend">
+            <div v-for="(m, i) in materials" :key="m.name">
+              <i class="legend-dot" :style="{ background: chartColor(i) }" />
+              <span
+                ><strong>{{ m.name }}</strong
+                ><small>{{ m.count }} 卷</small></span
+              >
+              <b>{{ weight(m.amount) }}</b>
+            </div>
+          </div>
+          <p v-else class="composition-empty">添加第一卷耗材后，可查看各类材料的剩余重量。</p>
         </div>
-      </div>
-      <EmptyState
-        :icon="CheckCheck"
-        v-else
-        :title="store.jobs.length ? '全部核对完成' : '尚无打印任务'"
-        :description="
-          store.jobs.length
-            ? '已核对的耗材用量可在打印记录中查看。'
-            : '导入切片文件或手动新增任务，再核对实际使用的料卷。'
-        "
-        ><RouterLink to="/jobs" class="button small"
-          >{{ store.jobs.length ? '查看打印记录' : '添加打印任务'
-          }}<ArrowRight :size="14" /></RouterLink
-      ></EmptyState>
-      <div class="panel-note"><CheckCheck :size="15" />只有你确认后，库存才会变化。</div>
-    </section>
-    <section class="panel distribution-panel">
-      <div class="panel-heading">
-        <div>
-          <h2>库存分布</h2>
-          <p>按材料类型 · 剩余重量</p>
-        </div>
-        <Layers3 :size="18" class="muted" />
-      </div>
-      <div class="composition">
-        <div class="material-ring" :style="{ background: distribution }">
+        <RouterLink to="/analytics" class="panel-bottom-link"
+          >探索更多统计<ArrowRight :size="15"
+        /></RouterLink>
+      </section>
+      <section class="panel low-panel">
+        <div class="panel-heading">
           <div>
-            <small>总余量</small><strong>{{ weight(remaining) }}</strong>
+            <h2>
+              低库存提醒 <span class="heading-count">{{ low.length }}</span>
+            </h2>
+            <p>低于 {{ grams(store.data?.settings.lowStockMg || 0) }} g 的实体料卷</p>
           </div>
+          <span class="status-dot amber" />
         </div>
-        <div v-if="materials.length" class="material-legend">
-          <div v-for="(m, i) in materials" :key="m.name">
-            <i class="legend-dot" :style="{ background: chartColor(i) }" />
-            <span
-              ><strong>{{ m.name }}</strong
-              ><small>{{ m.count }} 卷</small></span
-            >
-            <b>{{ weight(m.amount) }}</b>
-          </div>
+        <div v-if="low.length" class="low-list">
+          <RouterLink
+            v-for="s in low.slice(0, 4)"
+            :key="s.id"
+            :to="{ path: '/inventory', query: { q: s.id } }"
+            ><SpoolIcon :color="s.product.colorHex" :size="49" />
+            <div class="grow">
+              <strong>{{ s.product.brand }} {{ s.product.material }}</strong
+              ><small>{{ s.product.colorName || s.product.colorHex }}</small>
+            </div>
+            <strong class="warning-text"
+              >{{ grams(s.remainingMg) }}<small> g</small></strong
+            ></RouterLink
+          >
         </div>
-        <p v-else class="composition-empty">添加第一卷耗材后，可查看各类材料的剩余重量。</p>
-      </div>
-      <RouterLink to="/analytics" class="panel-bottom-link"
-        >探索更多统计<ArrowRight :size="15"
-      /></RouterLink>
-    </section>
-    <section class="panel recent-panel">
-      <div class="panel-heading">
-        <div>
-          <h2>最近打印</h2>
-          <p>最近添加的五项打印任务</p>
+        <div v-else class="mini-empty">
+          <CheckCheck :size="26" class="success-text" />
+          <p>{{ active.length ? '所有料卷余量充足。' : '添加耗材后，系统会关注每一卷的余量。' }}</p>
         </div>
-        <RouterLink to="/jobs" class="text-link">查看全部<ArrowUpRight :size="15" /></RouterLink>
-      </div>
-      <div v-if="store.jobs.length" class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>任务名称</th>
-              <th>打印机</th>
-              <th>打印结果</th>
-              <th class="align-right">报告用量</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="j in store.jobs.slice(0, 5)" :key="j.id">
-              <td>
-                <strong>{{ j.name }}</strong><small>{{
-                  date(j.startedAt, store.data?.settings.timezone)
-                }}</small>
-              </td>
-              <td>{{ j.printerName || '—' }}</td>
-              <td>
-                <span
-                  class="badge"
-                  :class="j.printStatus === 'completed' ? 'success' : 'neutral'"
-                  >{{ printLabels[j.printStatus] }}</span
-                >
-              </td>
-              <td class="align-right">
-                {{ j.totalMg === null ? '待补充' : grams(j.totalMg) + ' g' }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-else class="mini-empty">
-        <Box :size="25" />
-        <p>还没有打印任务。</p>
-      </div>
-    </section>
-    <section class="panel low-panel">
-      <div class="panel-heading">
-        <div>
-          <h2>
-            低库存提醒 <span class="heading-count">{{ low.length }}</span>
-          </h2>
-          <p>低于 {{ grams(store.data?.settings.lowStockMg || 0) }} g 的实体料卷</p>
-        </div>
-        <span class="status-dot amber" />
-      </div>
-      <div v-if="low.length" class="low-list">
-        <RouterLink
-          v-for="s in low.slice(0, 4)"
-          :key="s.id"
-          :to="{ path: '/inventory', query: { q: s.id } }"
-          ><SpoolIcon :color="s.product.colorHex" :size="49" />
-          <div class="grow">
-            <strong>{{ s.product.brand }} {{ s.product.material }}</strong
-            ><small>{{ s.product.colorName || s.product.colorHex }}</small>
-          </div>
-          <strong class="warning-text"
-            >{{ grams(s.remainingMg) }}<small> g</small></strong
-          ></RouterLink
-        >
-      </div>
-      <div v-else class="mini-empty">
-        <CheckCheck :size="26" class="success-text" />
-        <p>{{ active.length ? '所有料卷余量充足。' : '添加耗材后，系统会关注每一卷的余量。' }}</p>
-      </div>
-    </section>
+      </section>
+    </div>
   </div>
   <section class="device-strip">
     <div>

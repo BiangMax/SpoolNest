@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { Database, DomainError, required } from './database';
+import { DomainError, required } from './database';
+import type { WorkspaceStorage } from './storage';
 import {
   spoolSchema,
   spoolEditSchema,
@@ -24,7 +25,7 @@ const camel = (row: any): any =>
     Object.entries(row).map(([k, v]) => [k.replace(/_([a-z])/g, (_, x) => x.toUpperCase()), v]),
   );
 export class Store {
-  constructor(readonly db: Database) {}
+  constructor(readonly db: WorkspaceStorage) {}
   spools(): Spool[] {
     return this.db.all<any>('SELECT * FROM spool ORDER BY created_at DESC,id').map((row) => ({
       ...camel(row),
@@ -68,8 +69,17 @@ export class Store {
     );
     return id;
   }
+  // Called inside the write transaction so concurrent changes cannot share a batch number.
+  private nextSpoolChangeBatch() {
+    return required(
+      this.db.one<{ next: number }>(
+        'SELECT COALESCE(MAX(last_change_batch),0)+1 AS next FROM spool',
+      ),
+    ).next;
+  }
   private change(
     spoolId: string,
+    batch: number,
     deltaMg: number,
     kind: string,
     source: string,
@@ -88,7 +98,12 @@ export class Store {
     );
     const after = s.remaining_mg + deltaMg;
     if (after < 0) throw new DomainError('库存不足，所有扣减已回滚', 409);
-    this.db.run('UPDATE spool SET remaining_mg=?,version=version+1 WHERE id=?', after, spoolId);
+    this.db.run(
+      'UPDATE spool SET remaining_mg=?,last_change_batch=COALESCE(?,last_change_batch),version=version+1 WHERE id=?',
+      after,
+      deltaMg !== 0 || kind === 'initial' ? batch : null,
+      spoolId,
+    );
     const cost =
       costOverride !== undefined
         ? costOverride
@@ -114,9 +129,9 @@ export class Store {
   }
   addSpools(raw: unknown) {
     const input = spoolSchema.parse(raw);
-    return this.db.transaction(() => this.insertSpools(input));
+    return this.db.transaction(() => this.insertSpools(input, this.nextSpoolChangeBatch()));
   }
-  private insertSpools(input: z.infer<typeof spoolSchema>) {
+  private insertSpools(input: z.infer<typeof spoolSchema>, batch: number) {
     const productId = this.product(input.product);
     const ids: string[] = [];
     for (let i = 0; i < input.count; i++) {
@@ -134,14 +149,17 @@ export class Store {
         input.status,
         now(),
       );
-      this.change(id, input.remainingMg, 'initial', 'manual', '录入实体料卷');
+      this.change(id, batch, input.remainingMg, 'initial', 'manual', '录入实体料卷');
       ids.push(id);
     }
     return ids.map((id) => this.spool(id));
   }
   importSpools(rows: unknown[]) {
     const inputs = z.array(spoolSchema).min(1).max(1000).parse(rows);
-    return this.db.transaction(() => inputs.flatMap((input) => this.insertSpools(input)));
+    return this.db.transaction(() => {
+      const batch = this.nextSpoolChangeBatch();
+      return inputs.flatMap((input) => this.insertSpools(input, batch));
+    });
   }
   // 实验性云端库存同步（Bambu）。合并策略：只新增本地没有的卷、对同规格唯一候选回链
   // 云端 ID、克重差异只报告；用户逐卷确认后，可通过校准接口采用云端报告值。
@@ -164,6 +182,7 @@ export class Store {
       .max(1000)
       .parse(raw);
     return this.db.transaction(() => {
+      const batch = this.nextSpoolChangeBatch();
       let added = 0;
       const linked: { spoolId: string; label: string }[] = [];
       const differences: {
@@ -229,8 +248,9 @@ export class Store {
         }
         if (chosen) {
           this.db.run(
-            'UPDATE spool SET cloud_spool_id=?,cloud_keep_local=0,version=version+1 WHERE id=?',
+            'UPDATE spool SET cloud_spool_id=?,cloud_keep_local=0,last_change_batch=?,version=version+1 WHERE id=?',
             hit.id,
+            batch,
             chosen,
           );
           const s = this.spool(chosen);
@@ -260,7 +280,7 @@ export class Store {
           hit.id,
           now(),
         );
-        this.change(id, remainMg, 'initial', 'cloud_report', '拓竹云端库存同步（报告值）');
+        this.change(id, batch, remainMg, 'initial', 'cloud_report', '拓竹云端库存同步（报告值）');
         added++;
       }
       const cloudIds = new Set(hits.map((h) => h.id));
@@ -300,9 +320,10 @@ export class Store {
       if (input.decision === 'archive' && s.installed.length)
         throw new DomainError('请先解绑已安装的料卷，再归档', 409);
       this.db.run(
-        'UPDATE spool SET cloud_keep_local=?,status=?,version=version+1 WHERE id=?',
+        'UPDATE spool SET cloud_keep_local=?,status=?,last_change_batch=COALESCE(?,last_change_batch),version=version+1 WHERE id=?',
         input.decision === 'keep' ? 1 : 0,
         input.decision === 'archive' ? 'archived' : s.status,
+        input.decision === 'archive' ? this.nextSpoolChangeBatch() : null,
         id,
       );
       return this.spool(id);
@@ -347,8 +368,17 @@ export class Store {
       if (input.status === 'archived' && old.installed.length)
         throw new DomainError('请先解绑已安装的料卷');
       const productId = this.product(input.product);
+      const changed =
+        old.productId !== productId ||
+        old.emptyMg !== input.emptyMg ||
+        old.priceCents !== input.priceCents ||
+        old.purchasedAt !== input.purchasedAt ||
+        old.openedAt !== input.openedAt ||
+        old.location !== input.location ||
+        old.notes !== input.notes ||
+        old.status !== input.status;
       this.db.run(
-        'UPDATE spool SET product_id=?,empty_mg=?,price_cents=?,purchased_at=?,opened_at=?,location=?,notes=?,status=?,version=version+1 WHERE id=?',
+        'UPDATE spool SET product_id=?,empty_mg=?,price_cents=?,purchased_at=?,opened_at=?,location=?,notes=?,status=?,last_change_batch=COALESCE(?,last_change_batch),version=version+1 WHERE id=?',
         productId,
         input.emptyMg,
         input.priceCents,
@@ -357,6 +387,7 @@ export class Store {
         input.location,
         input.notes,
         input.status,
+        changed ? this.nextSpoolChangeBatch() : null,
         id,
       );
       return this.spool(id);
@@ -379,6 +410,7 @@ export class Store {
         throw new DomainError('料卷未关联云端库存，请重新同步云端库存后重试', 409);
       this.change(
         id,
+        this.nextSpoolChangeBatch(),
         input.remainingMg - s.remainingMg,
         input.source === 'manual' ? 'manual' : 'calibration',
         input.source,
@@ -578,7 +610,7 @@ export class Store {
     }
     return null;
   }
-  private restore(job: Job, reviewId: string) {
+  private restore(job: Job, reviewId: string, batch: number) {
     const previous = job.reviews.at(-1);
     if (!previous || previous.kind === 'undo') return;
     const txs = this.db.all<any>(
@@ -588,6 +620,7 @@ export class Store {
     for (const t of txs)
       this.change(
         t.spool_id,
+        batch,
         -t.delta_mg,
         'restore',
         'manual',
@@ -635,7 +668,8 @@ export class Store {
         now(),
         JSON.stringify(result),
       );
-      if (kind === 'correct') this.restore(job, reviewId);
+      const batch = this.nextSpoolChangeBatch();
+      if (kind === 'correct') this.restore(job, reviewId, batch);
       const totals = new Map<string, number>();
       for (const a of input.allocations) {
         const s = this.spool(a.spoolId);
@@ -657,6 +691,7 @@ export class Store {
         );
         this.change(
           a.spoolId,
+          batch,
           -a.amountMg,
           kind === 'correct' ? 'correction' : 'consumption',
           a.source,
@@ -690,7 +725,7 @@ export class Store {
         now(),
         JSON.stringify(result),
       );
-      this.restore(job, reviewId);
+      this.restore(job, reviewId, this.nextSpoolChangeBatch());
       this.db.run("UPDATE print_job SET review_status='pending',version=version+1 WHERE id=?", id);
       return result;
     });

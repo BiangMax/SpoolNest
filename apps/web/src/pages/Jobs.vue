@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { z } from 'zod';
 import {
   Plus,
   Upload,
@@ -16,6 +17,7 @@ import {
 import MetricCard from '../components/MetricCard.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
+import { useViewPreference } from '../lib/view-preferences';
 import { date, grams, shortId, dayKey } from '../lib/format';
 import { api } from '../lib/api';
 import { printLabels, reviewLabels, sourceLabels, type Job } from '../../../../packages/shared/src';
@@ -24,14 +26,20 @@ import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 const store = useWorkspace(),
   formOpen = ref(false),
-  search = ref(''),
-  review = ref('all'),
-  printer = ref(''),
-  status = ref(''),
-  source = ref(''),
-  material = ref(''),
-  from = ref(''),
-  to = ref(''),
+  search = useViewPreference('jobs.search', z.string().catch('')),
+  review = useViewPreference(
+    'jobs.review',
+    z.enum(['all', 'pending', 'reviewed', 'ignored']).catch('all'),
+  ),
+  printer = useViewPreference('jobs.printer', z.string().catch('')),
+  status = useViewPreference('jobs.status', z.enum(['', ...Object.keys(printLabels)]).catch('')),
+  source = useViewPreference(
+    'jobs.source',
+    z.enum(['', 'manual', 'three_mf', 'bambu_cloud']).catch(''),
+  ),
+  material = useViewPreference('jobs.material', z.string().catch('')),
+  from = useViewPreference('jobs.from', z.iso.date().catch('')),
+  to = useViewPreference('jobs.to', z.iso.date().catch('')),
   importOpen = ref(false),
   importPrinter = ref(''),
   importFile = ref<File | null>(null),
@@ -41,6 +49,19 @@ const store = useWorkspace(),
   undoJob = ref<Job | null>(null),
   saving = ref(false),
   newStatus = ref('unknown');
+const materials = computed(() =>
+  [...new Set(store.jobs.flatMap((job) => job.materials.map((entry) => entry.material)))].filter(
+    (value): value is string => Boolean(value),
+  ),
+);
+watch(
+  [() => store.printers, materials],
+  ([printers, materials]) => {
+    if (!printers.some((entry) => entry.id === printer.value)) printer.value = '';
+    if (!materials.includes(material.value)) material.value = '';
+  },
+  { immediate: true },
+);
 const filtered = computed(() =>
   store.jobs.filter(
     (j) =>
@@ -226,12 +247,7 @@ function detail(j: Job) {
         <option value="bambu_cloud">拓竹云端</option></select
       ><select v-model="material" aria-label="筛选材料">
         <option value="">所有材质</option>
-        <option
-          v-for="m in [
-            ...new Set(store.jobs.flatMap((j) => j.materials.map((m) => m.material))),
-          ].filter(Boolean)"
-          :key="m!"
-        >
+        <option v-for="m in materials" :key="m" :value="m">
           {{ m }}
         </option>
       </select>
