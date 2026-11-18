@@ -99,6 +99,131 @@ it('打印机后补：重同步回填未核对任务的设备关联，已核对�
   expect(store.job(linked.id).printerName).toBe('PB');
   expect(pa.serial).toBe('synthetic-device-a');
 });
+it('云端库存同步：新增、唯一回链、差异只报告、永不覆盖本地数值', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            hits: [
+              {
+                id: 9001,
+                filamentVendor: 'TEST',
+                filamentName: 'PLA White',
+                filamentType: 'PLA',
+                color: '#FFFFFFCC',
+                netWeight: 661,
+                totalNetWeight: 1000,
+              },
+              {
+                id: 9002,
+                filamentVendor: 'TEST',
+                filamentName: 'PETG Black',
+                filamentType: 'PETG',
+                color: '#161616FF',
+                netWeight: 745,
+                totalNetWeight: 1000,
+              },
+              {
+                id: 9003,
+                filamentVendor: 'TEST',
+                filamentName: 'ABS Blue',
+                filamentType: 'ABS',
+                color: '#2856E0FF',
+                netWeight: 500,
+                totalNetWeight: 1000,
+              },
+              {
+                id: 9004,
+                filamentVendor: 'TEST',
+                filamentName: 'PETG Gray',
+                filamentType: 'PETG',
+                color: '#8C8C8CFF',
+                netWeight: 900,
+                totalNetWeight: 1000,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    ),
+  );
+  const { app, store } = await setup();
+  store.addSpools({
+    ...spoolInput(806000, 'TEST'),
+    product: {
+      brand: 'TEST',
+      name: 'PLA White',
+      material: 'PLA',
+      colorHex: '#FFFFFF',
+      colorName: '',
+      netMg: 1000000,
+    },
+  });
+  store.addSpools({
+    ...spoolInput(745000, 'TEST'),
+    product: {
+      brand: 'TEST',
+      name: 'PETG Black',
+      material: 'PETG',
+      colorHex: '#161616',
+      colorName: '',
+      netMg: 1000000,
+    },
+    count: 2,
+  });
+  store.addSpools({
+    ...spoolInput(900000, 'TEST'),
+    product: {
+      brand: 'TEST',
+      name: 'PETG Gray',
+      material: 'PETG',
+      colorHex: '#8C8C8C',
+      colorName: '',
+      netMg: 1000000,
+    },
+    count: 1,
+  });
+  store.addSpools({
+    ...spoolInput(745000, 'TEST'),
+    product: {
+      brand: 'TEST',
+      name: 'PETG Gray',
+      material: 'PETG',
+      colorHex: '#8C8C8C',
+      colorName: '',
+      netMg: 1000000,
+    },
+    count: 1,
+  });
+  const first = await app.inject({ method: 'POST', url: '/api/sync/spools', payload: {} });
+  expect(first.statusCode).toBe(200);
+  const r = first.json();
+  expect(r.added).toBe(1);
+  expect(r.differences).toHaveLength(1);
+  expect(r.differences[0].localRemainingMg).toBe(806000);
+  expect(r.differences[0].cloudRemainingMg).toBe(661000);
+  expect(r.warnings.some((w: string) => w.includes('无法区分'))).toBe(true);
+  const spools = store.spools();
+  const white = spools.find((s) => s.product.name === 'PLA White')!;
+  expect(white.remainingMg).toBe(806000);
+  expect(white.cloudSpoolId).toBe(9001);
+  expect(spools.find((s) => s.product.name === 'ABS Blue')!.remainingMg).toBe(500000);
+  expect(
+    spools.filter((s) => s.product.name === 'PETG Black').every((s) => s.cloudSpoolId === null),
+  ).toBe(true);
+  const grayLinked = spools.filter(
+    (s) => s.product.name === 'PETG Gray' && s.cloudSpoolId === 9004,
+  );
+  expect(grayLinked).toHaveLength(1);
+  expect(grayLinked[0].remainingMg).toBe(900000);
+  const second = await app.inject({ method: 'POST', url: '/api/sync/spools', payload: {} });
+  expect(second.statusCode).toBe(200);
+  expect(second.json().added).toBe(0);
+  expect(second.json().differences).toHaveLength(1);
+  expect(store.spools().filter((s) => s.product.name === 'ABS Blue')).toHaveLength(1);
+});
 it('合成云端认证失效有明确状态，不影响离线库存', async () => {
   vi.stubGlobal(
     'fetch',

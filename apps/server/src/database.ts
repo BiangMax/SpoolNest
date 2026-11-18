@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export class Database {
   readonly raw: DatabaseSync;
   constructor(path: string) {
@@ -11,7 +11,7 @@ export class Database {
     this.raw.exec(
       'CREATE TABLE IF NOT EXISTS schema_migration (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)',
     );
-    const migrations = ['001_initial.sql', '002_ledger_snapshot.sql'];
+    const migrations = ['001_initial.sql', '002_ledger_snapshot.sql', '003_spool_cloud_id.sql'];
     const version = this.raw
       .prepare('SELECT COALESCE(MAX(version),0) AS v FROM schema_migration')
       .get() as { v: number };

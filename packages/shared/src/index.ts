@@ -115,6 +115,7 @@ export type Spool = Omit<z.infer<typeof spoolSchema>, 'product' | 'count'> & {
   version: number;
   createdAt: string;
   installed: string[];
+  cloudSpoolId: number | null;
 };
 export type Material = z.infer<typeof materialSchema> & { id: string; jobId: string };
 export type Allocation = z.infer<typeof allocationSchema>;

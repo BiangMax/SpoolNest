@@ -143,6 +143,154 @@ export class Store {
     const inputs = z.array(spoolSchema).min(1).max(1000).parse(rows);
     return this.db.transaction(() => inputs.flatMap((input) => this.insertSpools(input)));
   }
+  // 实验性云端库存同步（Bambu）。合并策略：只新增本地没有的卷、对同规格唯一候选回链
+  // 云端 ID、克重差异只报告不覆盖——人工校准过的库存数值永远以本地为准。
+  syncCloudSpools(raw: unknown[]) {
+    const hits = z
+      .array(
+        z
+          .object({
+            id: z.number().int().safe(),
+            vendor: z.string().max(100).nullable().optional(),
+            name: z.string().max(160).nullable().optional(),
+            material: z.string().max(80).nullable().optional(),
+            color: z.string().max(40).nullable().optional(),
+            remainingMg: z.number().int().min(0).max(100_000_000).nullable().optional(),
+            totalNetWeightMg: z.number().int().min(0).max(100_000_000).nullable().optional(),
+            note: z.string().max(2000).nullable().optional(),
+          })
+          .passthrough(),
+      )
+      .max(1000)
+      .parse(raw);
+    return this.db.transaction(() => {
+      let added = 0;
+      const linked: { spoolId: string; label: string }[] = [];
+      const differences: {
+        spoolId: string;
+        label: string;
+        cloudRemainingMg: number;
+        localRemainingMg: number;
+      }[] = [];
+      const warnings: string[] = [];
+      for (const hit of hits) {
+        const vendor = (hit.vendor || '').trim();
+        const name = (hit.name || '').trim();
+        const material = (hit.material || '').trim();
+        const hex = (hit.color || '').slice(0, 7);
+        const remainMg = hit.remainingMg ?? null;
+        const totalMg = hit.totalNetWeightMg ?? null;
+        if (!vendor || !name || !material || !/^#[0-9a-fA-F]{6}$/.test(hex) || remainMg === null) {
+          warnings.push(`云端卷 ${hit.id} 缺少品牌/名称/材质/颜色/剩余量，未导入`);
+          continue;
+        }
+        const label = `${vendor} ${name} ${material} ${hex}`;
+        const linkedAlready = this.db.one<any>(
+          'SELECT id FROM spool WHERE cloud_spool_id=?',
+          hit.id,
+        );
+        if (linkedAlready) {
+          const s = this.spool(linkedAlready.id as string);
+          this.reportDrift(s, label, remainMg, differences);
+          continue;
+        }
+        if (totalMg === null || totalMg <= 0) {
+          warnings.push(`云端卷 ${hit.id}（${label}）缺少标称克重，未导入`);
+          continue;
+        }
+        const productInput = {
+          brand: vendor,
+          name,
+          material,
+          subtype: '',
+          colorName: '',
+          colorHex: hex,
+          colorCode: '',
+          netMg: totalMg,
+        };
+        const productId = this.findProduct(productInput);
+        const candidates = productId
+          ? this.db.all<any>(
+              'SELECT id,remaining_mg FROM spool WHERE product_id=? AND cloud_spool_id IS NULL ORDER BY created_at',
+              productId,
+            )
+          : [];
+        let chosen: string | null = null;
+        if (candidates.length === 1) chosen = candidates[0].id as string;
+        else if (candidates.length > 1) {
+          // 同规格多卷：按剩余克重（±1g）唯一命中才回链，无法区分就交人工
+          const byWeight = candidates.filter(
+            (c) => Math.abs((c.remaining_mg as number) - remainMg) <= 1000,
+          );
+          if (byWeight.length === 1) chosen = byWeight[0].id as string;
+        }
+        if (chosen) {
+          this.db.run(
+            'UPDATE spool SET cloud_spool_id=?,version=version+1 WHERE id=?',
+            hit.id,
+            chosen,
+          );
+          const s = this.spool(chosen);
+          if (!this.reportDrift(s, label, remainMg, differences))
+            linked.push({ spoolId: chosen, label: `${label} ${remainMg}g` });
+          continue;
+        }
+        if (candidates.length > 1) {
+          warnings.push(
+            `云端卷 ${hit.id}（${label}）在本地有 ${candidates.length} 卷同规格料卷且剩余克重无法区分，请人工指定对应后重试`,
+          );
+          continue;
+        }
+        const id = randomUUID();
+        this.db.run(
+          'INSERT INTO spool(id,product_id,remaining_mg,empty_mg,price_cents,purchased_at,opened_at,location,notes,status,cloud_spool_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+          id,
+          this.product(productInput),
+          0,
+          null,
+          null,
+          null,
+          null,
+          '',
+          hit.note || '拓竹云端库存同步；剩余量为云端报告值，可人工校准',
+          remainMg <= 0 ? 'empty' : remainMg >= totalMg ? 'sealed' : 'opened',
+          hit.id,
+          now(),
+        );
+        this.change(id, remainMg, 'initial', 'cloud_report', '拓竹云端库存同步（报告值）');
+        added++;
+      }
+      return { added, linkedCount: linked.length, linked, differences, warnings };
+    });
+  }
+  private reportDrift(
+    s: Spool,
+    label: string,
+    cloudRemainMg: number,
+    differences: {
+      spoolId: string;
+      label: string;
+      cloudRemainingMg: number;
+      localRemainingMg: number;
+    }[],
+  ) {
+    if (Math.abs(s.remainingMg - cloudRemainMg) <= 1000) return false;
+    differences.push({
+      spoolId: s.id,
+      label,
+      cloudRemainingMg: cloudRemainMg,
+      localRemainingMg: s.remainingMg,
+    });
+    return true;
+  }
+  private findProduct(input: z.infer<typeof spoolSchema>['product']) {
+    const signature = hash(input);
+    const existing = this.db.one<any>(
+      'SELECT id FROM filament_product WHERE signature=?',
+      signature,
+    );
+    return existing ? (existing.id as string) : null;
+  }
   editSpool(id: string, raw: unknown) {
     const input = spoolEditSchema.parse(raw);
     return this.db.transaction(() => {

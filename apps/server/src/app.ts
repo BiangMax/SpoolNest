@@ -280,6 +280,30 @@ export function createApp(options: AppOptions = {}) {
       syncing = false;
     }
   });
+  app.post('/api/sync/spools', async () => {
+    const state = syncState();
+    if (!state.enabled || !state.configured)
+      throw new DomainError('拓竹云端尚未启用；CSV 与手动录入仍可正常使用。', 409);
+    if (syncing) throw new DomainError('已有同步正在进行', 409);
+    syncing = true;
+    try {
+      const result = await adapter.filament();
+      const summary = store.syncCloudSpools(result.spools);
+      return { ...summary, warnings: [...result.warnings, ...summary.warnings] };
+    } catch (e) {
+      const message = (e as Error).message;
+      throw new DomainError(
+        message.includes('认证')
+          ? '认证失效，请重新配置令牌；未更改任何库存'
+          : message.includes('HTTP')
+            ? message
+            : '云端请求失败或响应格式不兼容，未更改任何库存',
+        502,
+      );
+    } finally {
+      syncing = false;
+    }
+  });
   app.get('/api/export/spools.csv', async (req, reply) => {
     const rows = store.spools().map((s) => ({
       spoolId: s.id,
