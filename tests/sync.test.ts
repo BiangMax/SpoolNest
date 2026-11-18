@@ -226,6 +226,85 @@ it('云端库存同步：新增、唯一回链、差异只报告、永不覆盖�
   expect(second.json().differences).toHaveLength(1);
   expect(store.spools().filter((s) => s.product.name === 'ABS Blue')).toHaveLength(1);
 });
+it('逐卷采用云端重量保留流水，并拒绝重复提交和过期对照', async () => {
+  const { app, store } = await setup();
+  const [s, untouched] = store.addSpools({ ...spoolInput(), count: 2 });
+  const raw = {
+    id: 99001,
+    vendor: s.product.brand,
+    name: s.product.name,
+    material: s.product.material,
+    color: s.product.colorHex,
+    remainingMg: 661000,
+    totalNetWeightMg: s.product.netMg,
+  };
+  // 给测试目标明确关联，避免同规格多卷猜测；同步读取本身不改重量。
+  store.db.run('UPDATE spool SET cloud_spool_id=? WHERE id=?', raw.id, s.id);
+  const d = store.syncCloudSpools([raw]).differences[0];
+  expect(store.spool(s.id).remainingMg).toBe(800000);
+  const payload = {
+    remainingMg: d.cloudRemainingMg,
+    expectedVersion: d.expectedVersion,
+    source: 'cloud_report',
+    notes: '测试用户确认采用云端报告值',
+  };
+  const url = `/api/spools/${s.id}/calibrate`;
+  expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(200);
+  expect(store.spool(s.id).remainingMg).toBe(661000);
+  expect(store.spool(untouched.id).remainingMg).toBe(800000);
+  const ledger = () =>
+    store.db.all<any>(
+      "SELECT * FROM inventory_transaction WHERE spool_id=? AND source='cloud_report'",
+      s.id,
+    );
+  expect(ledger()).toHaveLength(1);
+  expect(ledger()[0]).toMatchObject({
+    kind: 'calibration',
+    delta_mg: -139000,
+    before_mg: 800000,
+    after_mg: 661000,
+  });
+  expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(409);
+  expect(ledger()).toHaveLength(1);
+  const stale = store.syncCloudSpools([{ ...raw, remainingMg: 0 }]).differences[0];
+  store.calibrate(s.id, {
+    remainingMg: 700000,
+    expectedVersion: stale.expectedVersion,
+    source: 'weighed',
+    notes: '对照后重新称重',
+  });
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        payload: { ...payload, remainingMg: 0, expectedVersion: stale.expectedVersion },
+      })
+    ).statusCode,
+  ).toBe(409);
+  expect(store.spool(s.id).remainingMg).toBe(700000);
+  const zero = store.syncCloudSpools([{ ...raw, remainingMg: 0 }]).differences[0];
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url,
+        payload: { ...payload, remainingMg: 0, expectedVersion: zero.expectedVersion },
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(store.spool(s.id).remainingMg).toBe(0);
+  expect(store.syncCloudSpools([{ ...raw, remainingMg: 0 }]).differences).toHaveLength(0);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url: `/api/spools/${untouched.id}/calibrate`,
+        payload: { ...payload, expectedVersion: store.spool(untouched.id).version },
+      })
+    ).statusCode,
+  ).toBe(409);
+});
 it('合成云端认证失效有明确状态，不影响离线库存', async () => {
   vi.stubGlobal(
     'fetch',

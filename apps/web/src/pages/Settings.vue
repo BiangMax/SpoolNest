@@ -11,10 +11,12 @@ import {
   Info,
   Settings2,
   LockKeyhole,
+  ArrowRight,
+  CheckCircle2,
 } from 'lucide-vue-next';
 import { useWorkspace } from '../lib/store';
 import { download } from '../lib/api';
-import { date } from '../lib/format';
+import { date, grams, shortId } from '../lib/format';
 import Modal from '../components/Modal.vue';
 const store = useWorkspace(),
   threshold = ref((store.data?.settings.lowStockMg || 150000) / 1000),
@@ -34,6 +36,14 @@ const statusLabels: Record<string, string> = {
   auth_expired: '认证失效',
   failed: '同步失败',
 };
+const spoolSyncNeedsAttention = computed(
+  () =>
+    !!(
+      store.spoolSync?.differences.length ||
+      store.spoolSync?.warnings.length ||
+      store.spoolSyncError
+    ),
+);
 async function enable() {
   saving.value = true;
   error.value = '';
@@ -183,29 +193,56 @@ async function preferences() {
             >技术边界与验证步骤<ExternalLink :size="14"
           /></a>
         </div>
-        <div v-if="store.spoolSync" class="callout warning">
-          <Info :size="18" />
-          <div>
+        <div
+          v-if="store.spoolSync"
+          class="callout cloud-sync-result"
+          :class="spoolSyncNeedsAttention ? 'warning' : 'success'"
+        >
+          <Info v-if="spoolSyncNeedsAttention" :size="18" />
+          <CheckCircle2 v-else :size="18" />
+          <div class="cloud-diff-content">
             <p v-if="store.spoolSync.differences.length">
               克重差异 {{ store.spoolSync.differences.length }}
-              卷（本地数值未覆盖，请人工校准或核对后更正）：
+              卷，核对后点击“同步”，将这一卷的本地余量更新为右侧云端报告值，并记录校准流水。
             </p>
-            <p v-else>云端库存与本地一致，无克重差异。</p>
-            <ul v-if="store.spoolSync.differences.length" class="diff-list">
-              <li v-for="d in store.spoolSync.differences.slice(0, 6)" :key="d.spoolId">
-                {{ d.label }} · 云端 {{ Math.round(d.cloudRemainingMg / 1000) }}g / 本地
-                {{ Math.round(d.localRemainingMg / 1000) }}g
-              </li>
-            </ul>
-            <p v-if="store.spoolSync.differences.length > 6">
-              …等共 {{ store.spoolSync.differences.length }} 卷，全部以后续同步结果为准。
-            </p>
+            <p v-else>本次对照已无待处理的重量差异。</p>
+            <div v-if="store.spoolSync.differences.length" class="cloud-diff-list">
+              <article
+                v-for="d in store.spoolSync.differences"
+                :key="d.spoolId"
+                class="cloud-diff-row"
+              >
+                <h3>
+                  {{ d.label }} <span>#{{ shortId(d.spoolId) }}</span>
+                </h3>
+                <div class="cloud-diff-comparison">
+                  <div>
+                    <span>本地 · 旧数据</span
+                    ><strong>{{ grams(d.localRemainingMg) }} <small>g</small></strong>
+                  </div>
+                  <ArrowRight :size="20" aria-hidden="true" />
+                  <div>
+                    <span>云端 · 新数据</span
+                    ><strong>{{ grams(d.cloudRemainingMg) }} <small>g</small></strong>
+                  </div>
+                  <button
+                    class="button primary"
+                    :disabled="store.busy"
+                    :aria-label="`同步 ${d.label} #${shortId(d.spoolId)} 的云端重量`"
+                    @click="store.applyCloudWeight(d)"
+                  >
+                    {{ store.applyingCloudSpool === d.spoolId ? '同步中…' : '同步' }}
+                  </button>
+                </div>
+              </article>
+            </div>
+            <p v-if="store.spoolSyncError" role="alert">{{ store.spoolSyncError }}</p>
             <p v-if="store.spoolSync.warnings.length">{{ store.spoolSync.warnings.join('；') }}</p>
           </div>
         </div>
         <p class="help-text">
           每批最多读取 5 页、每页 50 项；重复任务按云端 ID
-          去重。云端库存同步只新增本地没有的卷并回链同规格唯一卷，克重差异仅报告、永不覆盖你确认过的本地数值。云端接入不可用时，3MF
+          去重。读取云端库存会新增缺失料卷并关联已有料卷；已有重量差异需逐卷点击“同步”才会更新本地，不会修改云端，也不会核对历史打印任务。云端接入不可用时，3MF
           与手动任务仍可正常使用。
         </p>
       </div>

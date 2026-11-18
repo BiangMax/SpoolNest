@@ -144,7 +144,7 @@ export class Store {
     return this.db.transaction(() => inputs.flatMap((input) => this.insertSpools(input)));
   }
   // 实验性云端库存同步（Bambu）。合并策略：只新增本地没有的卷、对同规格唯一候选回链
-  // 云端 ID、克重差异只报告不覆盖——人工校准过的库存数值永远以本地为准。
+  // 云端 ID、克重差异只报告；用户逐卷确认后，可通过校准接口采用云端报告值。
   syncCloudSpools(raw: unknown[]) {
     const hits = z
       .array(
@@ -171,6 +171,7 @@ export class Store {
         label: string;
         cloudRemainingMg: number;
         localRemainingMg: number;
+        expectedVersion: number;
       }[] = [];
       const warnings: string[] = [];
       for (const hit of hits) {
@@ -274,6 +275,7 @@ export class Store {
       label: string;
       cloudRemainingMg: number;
       localRemainingMg: number;
+      expectedVersion: number;
     }[],
   ) {
     if (Math.abs(s.remainingMg - cloudRemainMg) <= 1000) return false;
@@ -282,6 +284,7 @@ export class Store {
       label,
       cloudRemainingMg: cloudRemainMg,
       localRemainingMg: s.remainingMg,
+      expectedVersion: s.version,
     });
     return true;
   }
@@ -322,7 +325,7 @@ export class Store {
       .object({
         remainingMg: z.number().int().min(0).max(100_000_000),
         expectedVersion: z.number().int(),
-        source: z.enum(['weighed', 'manual']),
+        source: z.enum(['weighed', 'manual', 'cloud_report']),
         notes: z.string().min(1).max(2000),
       })
       .parse(raw);
@@ -330,10 +333,12 @@ export class Store {
       const s = this.spool(id);
       if (s.version !== input.expectedVersion)
         throw new DomainError('料卷已更新，请刷新后重试', 409);
+      if (input.source === 'cloud_report' && s.cloudSpoolId == null)
+        throw new DomainError('料卷未关联云端库存，请重新同步云端库存后重试', 409);
       this.change(
         id,
         input.remainingMg - s.remainingMg,
-        input.source === 'weighed' ? 'calibration' : 'manual',
+        input.source === 'manual' ? 'manual' : 'calibration',
         input.source,
         input.notes,
       );

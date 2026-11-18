@@ -4,13 +4,7 @@ defineProps<{ color?: string; size?: number }>();
 <template>
   <svg :width="size || 64" :height="size || 64" viewBox="0 0 80 80" fill="none" aria-hidden="true">
     <ellipse cx="40" cy="68" rx="25" ry="4" fill="currentColor" opacity=".05" />
-    <path d="M24 18h28v44H24z" :fill="color || '#8d84f4'" />
-    <path
-      d="M29 20v40M34 20v40M39 20v40M44 20v40M49 20v40"
-      stroke="black"
-      stroke-opacity=".12"
-      stroke-width="2"
-    />
+    <!-- Paint back to front: rear flange, wound filament, then front flange. -->
     <ellipse
       cx="25"
       cy="40"
@@ -18,6 +12,13 @@ defineProps<{ color?: string; size?: number }>();
       ry="28"
       fill="var(--spool-side,#e9eaf0)"
       stroke="var(--border,#dddfe7)"
+    />
+    <path d="M25 18H54A10 22 0 0 1 54 62H25A10 22 0 0 1 25 18Z" :fill="color || '#8d84f4'" />
+    <path
+      d="M25 18C12 18 12 62 25 62M30 18C17 18 17 62 30 62M35 18C22 18 22 62 35 62M40 18C27 18 27 62 40 62M45 18C32 18 32 62 45 62M50 18C37 18 37 62 50 62"
+      stroke="black"
+      stroke-opacity=".12"
+      stroke-width="1"
     />
     <ellipse
       cx="54"

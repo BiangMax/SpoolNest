@@ -63,11 +63,45 @@ export const useWorkspace = defineStore('workspace', () => {
       label: string;
       cloudRemainingMg: number;
       localRemainingMg: number;
+      expectedVersion: number;
     }[];
     warnings: string[];
   } | null>(null);
-  async function syncSpools() {
+  const applyingCloudSpool = ref<string | null>(null),
+    spoolSyncError = ref('');
+  async function applyCloudWeight(d: NonNullable<typeof spoolSync.value>['differences'][number]) {
+    if (busy.value) return;
     busy.value = true;
+    applyingCloudSpool.value = d.spoolId;
+    spoolSyncError.value = '';
+    try {
+      await api(
+        `/spools/${d.spoolId}/calibrate`,
+        json('POST', {
+          remainingMg: d.cloudRemainingMg,
+          expectedVersion: d.expectedVersion,
+          source: 'cloud_report',
+          notes: '用户确认采用云端库存对照重量（云端报告值，非称重实测）',
+        }),
+      );
+      if (spoolSync.value)
+        spoolSync.value.differences = spoolSync.value.differences.filter(
+          (x) => x.spoolId !== d.spoolId,
+        );
+      await load();
+      toast('这一卷已同步云端重量，校准流水已保存');
+    } catch (e) {
+      spoolSyncError.value = `${d.label}：${(e as Error).message}。请重新读取云端库存后核对。`;
+      await load();
+    } finally {
+      applyingCloudSpool.value = null;
+      busy.value = false;
+    }
+  }
+  async function syncSpools() {
+    if (busy.value) return;
+    busy.value = true;
+    spoolSyncError.value = '';
     try {
       const result = await api<NonNullable<typeof spoolSync.value>>(
         '/sync/spools',
@@ -100,6 +134,9 @@ export const useWorkspace = defineStore('workspace', () => {
     printers,
     transactions,
     spoolSync,
+    applyingCloudSpool,
+    spoolSyncError,
+    applyCloudWeight,
     load,
     toast,
     mutate,

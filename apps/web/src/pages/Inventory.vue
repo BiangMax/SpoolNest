@@ -14,6 +14,7 @@ import {
   History,
   Archive,
   ArrowRight,
+  ChevronDown,
 } from 'lucide-vue-next';
 import { useWorkspace } from '../lib/store';
 import { grams, weight, date, shortId, money } from '../lib/format';
@@ -23,15 +24,17 @@ import SpoolForm from '../components/SpoolForm.vue';
 import SpoolIcon from '../components/SpoolIcon.vue';
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
+import ColorFilter from '../components/ColorFilter.vue';
 const store = useWorkspace(),
   route = useRoute(),
   search = ref(String(route.query.q || '')),
   material = ref(''),
   brand = ref(''),
-  location = ref(''),
   status = ref('active'),
   color = ref(''),
   sort = ref('newest'),
+  grouping = ref('brand'),
+  collapsedBrands = ref(new Set<string>()),
   formOpen = ref(false),
   editing = ref<Spool | null>(null),
   detailId = ref<string | null>(null),
@@ -58,7 +61,6 @@ const filtered = computed(() =>
           (status.value === 'active' ? s.status !== 'archived' : s.status === status.value)) &&
         (!material.value || s.product.material === material.value) &&
         (!brand.value || s.product.brand === brand.value) &&
-        (!location.value || s.location === location.value) &&
         (!color.value || s.product.colorHex === color.value) &&
         `${s.id} ${s.product.brand} ${s.product.name} ${s.product.material} ${s.product.colorName} ${s.location}`
           .toLowerCase()
@@ -72,6 +74,25 @@ const filtered = computed(() =>
           : b.createdAt.localeCompare(a.createdAt),
     ),
 );
+const groups = computed(() => {
+  if (grouping.value === 'none') return [{ brand: '', spools: filtered.value, remainingMg: 0 }];
+  const byBrand = new Map<string, { brand: string; spools: Spool[]; remainingMg: number }>();
+  for (const spool of filtered.value) {
+    const key = spool.product.brand;
+    let group = byBrand.get(key);
+    if (!group) {
+      group = { brand: key, spools: [], remainingMg: 0 };
+      byBrand.set(key, group);
+    }
+    group.spools.push(spool);
+    group.remainingMg += spool.remainingMg;
+  }
+  return [...byBrand.values()].sort((a, b) => a.brand.localeCompare(b.brand, 'zh-CN'));
+});
+function toggleBrand(brand: string) {
+  if (collapsedBrands.value.has(brand)) collapsedBrands.value.delete(brand);
+  else collapsedBrands.value.add(brand);
+}
 function open(s: Spool) {
   detailId.value = s.id;
   calibration.value = s.remainingMg / 1000;
@@ -193,21 +214,13 @@ async function exportCsv() {
       <option value="">所有品牌</option>
       <option v-for="b in [...new Set(store.spools.map((s) => s.product.brand))]" :key="b">
         {{ b }}
-      </option></select
-    ><select v-model="location" aria-label="按位置筛选">
-      <option value="">所有位置</option>
-      <option
-        v-for="l in [...new Set(store.spools.map((s) => s.location))].filter(Boolean)"
-        :key="l"
-      >
-        {{ l }}
-      </option></select
-    ><select v-model="color" aria-label="按颜色筛选">
-      <option value="">所有颜色</option>
-      <option v-for="c in [...new Set(store.spools.map((s) => s.product.colorHex))]" :key="c">
-        {{ c }}
-      </option></select
-    ><select v-model="status" aria-label="库存状态">
+      </option>
+    </select>
+    <ColorFilter
+      v-model="color"
+      :colors="[...new Set(store.spools.map((s) => s.product.colorHex))]"
+    />
+    <select v-model="status" aria-label="库存状态">
       <option value="active">在库耗材</option>
       <option value="sealed">未开封</option>
       <option value="opened">已开封</option>
@@ -219,69 +232,101 @@ async function exportCsv() {
       <option value="weight">余量从低到高</option>
       <option value="brand">品牌排序</option>
     </select>
-  </div>
-  <div v-if="filtered.length" class="spool-grid">
-    <button v-for="s in filtered" :key="s.id" class="spool-card" @click="open(s)">
-      <div class="spool-card-top">
-        <span class="spool-brand">{{ s.product.brand }}</span><span
-          class="badge"
-          :class="
-            s.status === 'sealed'
-              ? 'neutral'
-              : s.remainingMg < (store.data?.settings.lowStockMg || 0)
-                ? 'warning'
-                : 'subtle'
-          "
-          >{{
-            s.status === 'sealed'
-              ? '未开封'
-              : s.status === 'archived'
-                ? '已归档'
-                : s.status === 'empty'
-                  ? '已用尽'
-                  : s.remainingMg < (store.data?.settings.lowStockMg || 0)
-                    ? '余量偏低'
-                    : '使用中'
-          }}</span
-        >
-      </div>
-      <div class="spool-art">
-        <div class="spool-glow" :style="{ background: s.product.colorHex }" />
-        <SpoolIcon :color="s.product.colorHex" :size="120" />
-      </div>
-      <h3>
-        {{ s.product.material }} <span>{{ s.product.colorName || s.product.colorHex }}</span>
-      </h3>
-      <p class="spool-product">{{ s.product.name }}</p>
-      <div class="spool-quantity">
-        <strong>{{ grams(s.remainingMg) }}<span> g</span></strong
-        ><span>/ {{ grams(s.product.netMg) }} g</span>
-      </div>
-      <div class="progress">
-        <span
-          :style="{
-            width: Math.min(100, (s.remainingMg / s.product.netMg) * 100) + '%',
-            background: s.product.colorHex,
-          }"
-        />
-      </div>
-      <div class="spool-card-bottom">
-        <span><MapPin :size="13" />{{ s.location || '未设位置' }}</span
-        ><span>{{ Math.round((s.remainingMg / s.product.netMg) * 100) }}%</span>
-      </div>
-      <div class="spool-id">
-        #{{ shortId(s.id) }}<span v-if="s.installed.length" class="installed-dot">已安装</span>
-      </div></button
-    ><button
-      class="add-spool-card"
-      @click="
-        editing = null;
-        formOpen = true;
-      "
+    <button
+      type="button"
+      class="brand-group-switch"
+      role="switch"
+      :aria-checked="grouping === 'brand'"
+      @click="grouping = grouping === 'brand' ? 'none' : 'brand'"
     >
-      <div><Plus :size="24" /></div>
-      <strong>让新色彩加入仓库</strong><span>添加一卷耗材</span>
+      <Boxes :size="14" aria-hidden="true" />按品牌分组
+      <span class="brand-group-indicator" aria-hidden="true" />
     </button>
+  </div>
+  <div v-if="filtered.length" class="inventory-groups">
+    <section v-for="group in groups" :key="group.brand" class="inventory-group">
+      <h2 v-if="grouping === 'brand'" class="inventory-group-heading">
+        <button
+          class="inventory-group-toggle"
+          :aria-expanded="!collapsedBrands.has(group.brand)"
+          :aria-controls="`brand-spools-${encodeURIComponent(group.brand)}`"
+          @click="toggleBrand(group.brand)"
+        >
+          <ChevronDown :size="18" :class="{ collapsed: collapsedBrands.has(group.brand) }" />
+          <span class="inventory-group-name">{{ group.brand || '未填写品牌' }}</span>
+          <span class="badge neutral">{{ group.spools.length }} 卷</span>
+          <span class="inventory-group-weight">剩余 {{ weight(group.remainingMg) }}</span>
+        </button>
+      </h2>
+      <div
+        v-show="grouping === 'none' || !collapsedBrands.has(group.brand)"
+        :id="`brand-spools-${encodeURIComponent(group.brand)}`"
+        class="spool-grid"
+      >
+        <button v-for="s in group.spools" :key="s.id" class="spool-card" @click="open(s)">
+          <div class="spool-card-top">
+            <span class="spool-brand">{{ s.product.brand }}</span><span
+              class="badge"
+              :class="
+                s.status === 'sealed'
+                  ? 'neutral'
+                  : s.remainingMg < (store.data?.settings.lowStockMg || 0)
+                    ? 'warning'
+                    : 'subtle'
+              "
+              >{{
+                s.status === 'sealed'
+                  ? '未开封'
+                  : s.status === 'archived'
+                    ? '已归档'
+                    : s.status === 'empty'
+                      ? '已用尽'
+                      : s.remainingMg < (store.data?.settings.lowStockMg || 0)
+                        ? '余量偏低'
+                        : '使用中'
+              }}</span
+            >
+          </div>
+          <div class="spool-art">
+            <div class="spool-glow" :style="{ background: s.product.colorHex }" />
+            <SpoolIcon :color="s.product.colorHex" :size="120" />
+          </div>
+          <h3>
+            {{ s.product.material }} <span>{{ s.product.colorName || s.product.colorHex }}</span>
+          </h3>
+          <p class="spool-product">{{ s.product.name }}</p>
+          <div class="spool-quantity">
+            <strong>{{ grams(s.remainingMg) }}<span> g</span></strong
+            ><span>/ {{ grams(s.product.netMg) }} g</span>
+          </div>
+          <div class="progress">
+            <span
+              :style="{
+                width: Math.min(100, (s.remainingMg / s.product.netMg) * 100) + '%',
+                background: s.product.colorHex,
+              }"
+            />
+          </div>
+          <div class="spool-card-bottom">
+            <span><MapPin :size="13" />{{ s.location || '未设位置' }}</span
+            ><span>{{ Math.round((s.remainingMg / s.product.netMg) * 100) }}%</span>
+          </div>
+          <div class="spool-id">
+            #{{ shortId(s.id) }}<span v-if="s.installed.length" class="installed-dot">已安装</span>
+          </div></button
+        ><button
+          v-if="grouping === 'none'"
+          class="add-spool-card"
+          @click="
+            editing = null;
+            formOpen = true;
+          "
+        >
+          <div><Plus :size="24" /></div>
+          <strong>让新色彩加入仓库</strong><span>添加一卷耗材</span>
+        </button>
+      </div>
+    </section>
   </div>
   <EmptyState
     v-else
