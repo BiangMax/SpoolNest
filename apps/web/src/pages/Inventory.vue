@@ -16,6 +16,7 @@ import {
   ArrowRight,
   ChevronDown,
 } from 'lucide-vue-next';
+import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { grams, weight, date, shortId, money } from '../lib/format';
 import { download, api } from '../lib/api';
@@ -148,101 +149,97 @@ async function exportCsv() {
 }
 </script>
 <template>
-  <div class="page-heading">
-    <div>
-      <div class="eyebrow">YOUR FILAMENT LIBRARY</div>
-      <h1>
-        耗材库存<span class="heading-count">{{
-          store.spools.filter((s) => s.status !== 'archived').length
-        }}</span>
-      </h1>
-      <p>每一种色彩，每一卷余量，都井井有条。</p>
+  <PageHeading
+    title="耗材库存"
+    description="按品牌、材料和颜色查找实体料卷。"
+    :count="store.spools.filter((s) => s.status !== 'archived').length"
+  >
+    <button class="button" @click="exportCsv"><Download :size="16" />导出</button
+    ><button
+      class="button primary"
+      @click="
+        editing = null;
+        formOpen = true;
+      "
+    >
+      <Plus :size="17" />添加耗材
+    </button>
+  </PageHeading>
+  <section class="inventory-controls" aria-label="库存概况与筛选">
+    <div class="inventory-summary">
+      <span
+        ><span class="status-dot purple" />可用库存 <strong>{{ weight(allWeight) }}</strong></span
+      ><span
+        >产品规格
+        <strong
+          >{{
+            new Set(store.spools.filter((s) => s.status !== 'archived').map((s) => s.productId))
+              .size
+          }}
+          种</strong
+        ></span
+      ><span
+        >低库存
+        <strong
+          >{{
+            store.spools.filter(
+              (s) =>
+                s.status !== 'archived' && s.remainingMg < (store.data?.settings.lowStockMg || 0),
+            ).length
+          }}
+          卷</strong
+        ></span
+      ><button class="text-button" :disabled="importing" @click="csvInput?.click()">
+        <Upload :size="14" />{{ importing ? '正在导入…' : 'CSV 批量导入' }}</button
+      ><input ref="csvInput" type="file" accept=".csv" hidden @change="csv" />
     </div>
-    <div class="actions">
-      <button class="button" @click="exportCsv"><Download :size="16" />导出</button
-      ><button
-        class="button primary"
-        @click="
-          editing = null;
-          formOpen = true;
-        "
+    <div class="toolbar">
+      <div class="search-field">
+        <Search :size="17" /><input
+          v-model="search"
+          placeholder="搜索品牌、材质、颜色或编号…"
+          aria-label="搜索耗材"
+        />
+      </div>
+      <select v-model="material" aria-label="按材质筛选">
+        <option value="">所有材质</option>
+        <option v-for="m in [...new Set(store.spools.map((s) => s.product.material))]" :key="m">
+          {{ m }}
+        </option></select
+      ><select v-model="brand" aria-label="按品牌筛选">
+        <option value="">所有品牌</option>
+        <option v-for="b in [...new Set(store.spools.map((s) => s.product.brand))]" :key="b">
+          {{ b }}
+        </option>
+      </select>
+      <ColorFilter
+        v-model="color"
+        :colors="[...new Set(store.spools.map((s) => s.product.colorHex))]"
+      />
+      <select v-model="status" aria-label="库存状态">
+        <option value="active">在库耗材</option>
+        <option value="sealed">未开封</option>
+        <option value="opened">已开封</option>
+        <option value="empty">已用尽</option>
+        <option value="archived">已归档</option>
+        <option value="all">全部状态</option></select
+      ><select v-model="sort" aria-label="库存排序">
+        <option value="newest">最近添加</option>
+        <option value="weight">余量从低到高</option>
+        <option value="brand">品牌排序</option>
+      </select>
+      <button
+        type="button"
+        class="brand-group-switch"
+        role="switch"
+        :aria-checked="grouping === 'brand'"
+        @click="grouping = grouping === 'brand' ? 'none' : 'brand'"
       >
-        <Plus :size="17" />添加耗材
+        <Boxes :size="14" aria-hidden="true" />按品牌分组
+        <span class="brand-group-indicator" aria-hidden="true" />
       </button>
     </div>
-  </div>
-  <div class="inventory-summary">
-    <span
-      ><span class="status-dot purple" />可用库存 <strong>{{ weight(allWeight) }}</strong></span
-    ><span
-      >产品规格
-      <strong
-        >{{
-          new Set(store.spools.filter((s) => s.status !== 'archived').map((s) => s.productId)).size
-        }}
-        种</strong
-      ></span
-    ><span
-      >低库存
-      <strong
-        >{{
-          store.spools.filter(
-            (s) =>
-              s.status !== 'archived' && s.remainingMg < (store.data?.settings.lowStockMg || 0),
-          ).length
-        }}
-        卷</strong
-      ></span
-    ><button class="text-button" :disabled="importing" @click="csvInput?.click()">
-      <Upload :size="14" />{{ importing ? '正在导入…' : 'CSV 批量导入' }}</button
-    ><input ref="csvInput" type="file" accept=".csv" hidden @change="csv" />
-  </div>
-  <div class="toolbar">
-    <div class="search-field">
-      <Search :size="17" /><input
-        v-model="search"
-        placeholder="搜索品牌、材质、颜色或编号…"
-        aria-label="搜索耗材"
-      />
-    </div>
-    <select v-model="material" aria-label="按材质筛选">
-      <option value="">所有材质</option>
-      <option v-for="m in [...new Set(store.spools.map((s) => s.product.material))]" :key="m">
-        {{ m }}
-      </option></select
-    ><select v-model="brand" aria-label="按品牌筛选">
-      <option value="">所有品牌</option>
-      <option v-for="b in [...new Set(store.spools.map((s) => s.product.brand))]" :key="b">
-        {{ b }}
-      </option>
-    </select>
-    <ColorFilter
-      v-model="color"
-      :colors="[...new Set(store.spools.map((s) => s.product.colorHex))]"
-    />
-    <select v-model="status" aria-label="库存状态">
-      <option value="active">在库耗材</option>
-      <option value="sealed">未开封</option>
-      <option value="opened">已开封</option>
-      <option value="empty">已用尽</option>
-      <option value="archived">已归档</option>
-      <option value="all">全部状态</option></select
-    ><select v-model="sort" aria-label="库存排序">
-      <option value="newest">最近添加</option>
-      <option value="weight">余量从低到高</option>
-      <option value="brand">品牌排序</option>
-    </select>
-    <button
-      type="button"
-      class="brand-group-switch"
-      role="switch"
-      :aria-checked="grouping === 'brand'"
-      @click="grouping = grouping === 'brand' ? 'none' : 'brand'"
-    >
-      <Boxes :size="14" aria-hidden="true" />按品牌分组
-      <span class="brand-group-indicator" aria-hidden="true" />
-    </button>
-  </div>
+  </section>
   <div v-if="filtered.length" class="inventory-groups">
     <section v-for="group in groups" :key="group.brand" class="inventory-group">
       <h2 v-if="grouping === 'brand'" class="inventory-group-heading">
@@ -287,17 +284,21 @@ async function exportCsv() {
               }}</span
             >
           </div>
-          <div class="spool-art">
-            <div class="spool-glow" :style="{ background: s.product.colorHex }" />
-            <SpoolIcon :color="s.product.colorHex" :size="120" />
-          </div>
-          <h3>
-            {{ s.product.material }} <span>{{ s.product.colorName || s.product.colorHex }}</span>
-          </h3>
-          <p class="spool-product">{{ s.product.name }}</p>
-          <div class="spool-quantity">
-            <strong>{{ grams(s.remainingMg) }}<span> g</span></strong
-            ><span>/ {{ grams(s.product.netMg) }} g</span>
+          <div class="spool-overview">
+            <div class="spool-art" :style="{ '--filament': s.product.colorHex }">
+              <SpoolIcon :color="s.product.colorHex" :size="74" />
+            </div>
+            <div class="spool-spec">
+              <h3>
+                {{ s.product.material }}
+                <span>{{ s.product.colorName || s.product.colorHex }}</span>
+              </h3>
+              <p class="spool-product">{{ s.product.name }}</p>
+              <div class="spool-quantity">
+                <strong>{{ grams(s.remainingMg) }}<span> g</span></strong
+                ><span>/ {{ grams(s.product.netMg) }} g</span>
+              </div>
+            </div>
           </div>
           <div class="progress">
             <span
@@ -323,7 +324,7 @@ async function exportCsv() {
           "
         >
           <div><Plus :size="24" /></div>
-          <strong>让新色彩加入仓库</strong><span>添加一卷耗材</span>
+          <strong>添加一卷耗材</strong>
         </button>
       </div>
     </section>

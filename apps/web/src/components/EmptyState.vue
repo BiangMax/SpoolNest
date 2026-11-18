@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import type { Component } from 'vue';
 import { PackageOpen } from 'lucide-vue-next';
-defineProps<{ title: string; description: string }>();
+defineProps<{ title: string; description: string; icon?: Component }>();
 </script>
 <template>
   <div class="empty-state">
-    <div class="empty-icon"><PackageOpen :size="27" stroke-width="1.4" /></div>
+    <div class="empty-icon">
+      <component :is="icon || PackageOpen" :size="26" stroke-width="1.6" />
+    </div>
     <h3>{{ title }}</h3>
     <p>{{ description }}</p>
     <slot />

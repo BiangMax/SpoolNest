@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { ChartNoAxesCombined, ArrowDownRight, Coins, Scale, CalendarDays } from 'lucide-vue-next';
+import MetricCard from '../components/MetricCard.vue';
+import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { grams, weight, money, dayKey, date, shortId } from '../lib/format';
 import { type Transaction, transactionLabels } from '../../../../packages/shared/src';
@@ -73,35 +75,34 @@ const jobCosts = computed(() => {
 });
 </script>
 <template>
-  <div class="page-heading">
-    <div>
-      <div class="eyebrow">KNOW WHAT YOU CREATE WITH</div>
-      <h1>数据统计</h1>
-      <p>从真实库存流水，看见工作室的消耗与成本。</p>
-    </div>
-    <div class="actions date-range">
+  <PageHeading title="数据统计" description="按记账时间查看耗材净消耗与材料成本。">
+    <div class="date-range">
       <CalendarDays :size="16" /><input v-model="from" type="date" aria-label="统计开始日期" /><span
         >—</span
       ><input v-model="to" type="date" aria-label="统计结束日期" />
     </div>
-  </div>
+  </PageHeading>
   <div class="stat-grid three">
-    <div class="stat-card">
-      <span>净打印消耗<Scale :size="18" /></span><strong>{{ grams(total) }}<small>g</small></strong
-      ><small>已减去撤销和更正恢复</small>
-    </div>
-    <div class="stat-card">
-      <span>耗材成本<Coins :size="18" /></span
-      ><strong :class="{ 'missing-cost': cost === null }">{{
-        cost === null ? '数据不完整' : money(cost)
-      }}</strong
-      ><small>{{ cost === null ? '部分料卷未记录购买价格' : '按消耗时的单价快照计算' }}</small>
-    </div>
-    <div class="stat-card">
-      <span>涉及打印任务<ChartNoAxesCombined :size="18" /></span
-      ><strong>{{ jobCosts.length }}<small>项</small></strong
-      ><small>所选时间范围内有库存流水</small>
-    </div>
+    <MetricCard
+      label="净打印消耗"
+      :icon="Scale"
+      :value="grams(total)"
+      unit="g"
+      note="已减去撤销和更正恢复"
+    />
+    <MetricCard
+      label="耗材成本"
+      :icon="Coins"
+      :value="cost === null ? '数据不完整' : money(cost)"
+      :note="cost === null ? '部分料卷未记录购买价格' : '按消耗时的单价快照计算'"
+    />
+    <MetricCard
+      label="涉及打印任务"
+      :icon="ChartNoAxesCombined"
+      :value="jobCosts.length"
+      unit="项"
+      note="所选时间范围内有库存流水"
+    />
   </div>
   <section class="panel analytics-panel">
     <div class="panel-heading">
@@ -143,8 +144,8 @@ const jobCosts = computed(() => {
                   : dimension === 'color'
                     ? g.label
                     : i % 2
-                      ? '#9b92e9'
-                      : '#7567e9',
+                      ? 'var(--chart-2)'
+                      : 'var(--accent)',
             }"
           />
         </div>
@@ -153,6 +154,7 @@ const jobCosts = computed(() => {
       </div>
     </div>
     <EmptyState
+      :icon="ChartNoAxesCombined"
       v-else
       title="让数据跟着真实打印积累"
       description="核对第一项打印任务后，这里会呈现消耗与成本。未核对的建议重量不计入统计。"

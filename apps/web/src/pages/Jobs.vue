@@ -13,6 +13,8 @@ import {
   Copy,
   Info,
 } from 'lucide-vue-next';
+import MetricCard from '../components/MetricCard.vue';
+import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { date, grams, shortId, dayKey } from '../lib/format';
 import { api } from '../lib/api';
@@ -132,60 +134,74 @@ function detail(j: Job) {
 }
 </script>
 <template>
-  <div class="page-heading">
-    <div>
-      <div class="eyebrow">FROM PRINT TO INVENTORY</div>
-      <h1>打印任务</h1>
-      <p>同步每一次打印，由你确认每一克消耗。</p>
-    </div>
-    <div class="actions">
-      <button class="button" :disabled="store.busy" @click="store.sync()">
-        <RefreshCw :size="16" :class="{ spinning: store.busy }" />{{
-          store.busy ? '正在同步…' : '同步任务'
-        }}</button
-      ><button
-        class="button"
-        @click="
-          error = '';
-          importFile = null;
-          importOpen = true;
-        "
-      >
-        <Upload :size="16" />导入 3MF</button
-      ><button class="button primary" @click="formOpen = true"><Plus :size="16" />添加任务</button>
-    </div>
-  </div>
+  <PageHeading title="打印任务" description="查看打印结果，核对每次打印的实际用量。">
+    <button class="button" :disabled="store.busy" @click="store.sync()">
+      <RefreshCw :size="16" :class="{ spinning: store.busy }" />{{
+        store.busy ? '正在同步…' : '同步任务'
+      }}</button
+    ><button
+      class="button"
+      @click="
+        error = '';
+        importFile = null;
+        importOpen = true;
+      "
+    >
+      <Upload :size="16" />导入 3MF</button
+    ><button class="button primary" @click="formOpen = true"><Plus :size="16" />添加任务</button>
+  </PageHeading>
   <div class="stat-grid compact">
-    <div class="stat-card">
-      <span>任务总数<Box :size="17" /></span><strong>{{ store.jobs.length }}</strong
-      ><small>全部打印记录</small>
-    </div>
-    <div class="stat-card">
-      <span>待核对任务<Clock3 :size="17" /></span><strong class="accent-text">{{ pending }}</strong
-      ><small>等待你确认实际料卷</small>
-    </div>
-    <div class="stat-card">
-      <span>已核对任务<CheckCheck :size="17" /></span
-      ><strong>{{ store.jobs.filter((j) => j.reviewStatus === 'reviewed').length }}</strong
-      ><small>已记录库存流水</small>
-    </div>
-    <div class="stat-card">
-      <span>异常 / 数据待补充<Info :size="17" /></span
-      ><strong>{{
+    <MetricCard label="任务总数" :icon="Box" :value="store.jobs.length" note="全部打印记录" />
+    <MetricCard
+      label="待核对任务"
+      :icon="Clock3"
+      :value="pending"
+      class="highlighted"
+      note="等待确认实际用量"
+    />
+    <MetricCard
+      label="已核对任务"
+      :icon="CheckCheck"
+      :value="store.jobs.filter((j) => j.reviewStatus === 'reviewed').length"
+      note="已记录库存流水"
+    />
+    <MetricCard
+      label="异常 / 数据待补充"
+      :icon="Info"
+      :value="
         store.jobs.filter((j) => j.reviewStatus === 'error' || j.reviewStatus === 'awaiting_data')
           .length
-      }}</strong
-      ><small>连接状态见系统设置</small>
-    </div>
+      "
+      note="连接状态见系统设置"
+    />
   </div>
   <div class="panel task-panel">
     <div class="tabs">
-      <button :class="{ active: review === 'all' }" @click="review = 'all'">全部任务</button
-      ><button :class="{ active: review === 'pending' }" @click="review = 'pending'">
+      <button
+        :aria-pressed="review === 'all'"
+        :class="{ active: review === 'all' }"
+        @click="review = 'all'"
+      >
+        全部任务</button
+      ><button
+        :aria-pressed="review === 'pending'"
+        :class="{ active: review === 'pending' }"
+        @click="review = 'pending'"
+      >
         待核对 <span>{{ pending }}</span></button
-      ><button :class="{ active: review === 'reviewed' }" @click="review = 'reviewed'">
+      ><button
+        :aria-pressed="review === 'reviewed'"
+        :class="{ active: review === 'reviewed' }"
+        @click="review = 'reviewed'"
+      >
         已核对</button
-      ><button :class="{ active: review === 'ignored' }" @click="review = 'ignored'">已忽略</button>
+      ><button
+        :aria-pressed="review === 'ignored'"
+        :class="{ active: review === 'ignored' }"
+        @click="review = 'ignored'"
+      >
+        已忽略
+      </button>
     </div>
     <div class="toolbar padded">
       <div class="search-field">
@@ -217,9 +233,13 @@ function detail(j: Job) {
           :key="m!"
         >
           {{ m }}
-        </option></select
-      ><input v-model="from" type="date" aria-label="开始日期" /><span class="muted">至</span
-      ><input v-model="to" type="date" aria-label="结束日期" />
+        </option>
+      </select>
+      <div class="date-range">
+        <input v-model="from" type="date" aria-label="开始日期" />
+        <span>至</span>
+        <input v-model="to" type="date" aria-label="结束日期" />
+      </div>
     </div>
     <div v-if="filtered.length" class="table-scroll">
       <table class="jobs-table">
@@ -254,7 +274,7 @@ function detail(j: Job) {
                 </div>
               </button>
             </td>
-            <td>
+            <td data-label="打印机 / 时间">
               <strong>{{ j.printerName || '未关联设备' }}</strong><small
                 >{{ date(j.startedAt, store.data?.settings.timezone)
                 }}<template v-if="j.durationSeconds !== null">
@@ -262,7 +282,7 @@ function detail(j: Job) {
                 ></small
               >
             </td>
-            <td>
+            <td data-label="材料 / 报告用量">
               <div class="inline-meta">
                 <span
                   v-for="m in j.materials"
@@ -282,7 +302,7 @@ function detail(j: Job) {
                 [...new Set(j.materials.map((m) => m.material || '未知材质'))].join(' / ')
               }}</small>
             </td>
-            <td>
+            <td data-label="打印结果">
               <span
                 class="badge"
                 :class="
@@ -295,7 +315,7 @@ function detail(j: Job) {
                 >{{ printLabels[j.printStatus] }}</span
               >
             </td>
-            <td>
+            <td data-label="库存核对">
               <span class="review-state" :class="j.reviewStatus"
                 ><span class="status-dot" />{{ reviewLabels[j.reviewStatus] }}</span
               >
@@ -335,6 +355,7 @@ function detail(j: Job) {
       </table>
     </div>
     <EmptyState
+      :icon="Box"
       v-else
       :title="store.jobs.length ? '没有符合条件的任务' : '下一次打印，从这里留下记录'"
       :description="
