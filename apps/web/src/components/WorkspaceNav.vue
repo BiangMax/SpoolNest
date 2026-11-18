@@ -29,7 +29,7 @@ const nav = [
 </script>
 <template>
   <RouterLink to="/" class="brand" @click="emit('navigate')"
-    ><img src="/favicon.svg" alt="" /><span
+    ><img src="/favicon.svg?v=2" alt="" /><span
       >SpoolNest<span class="brand-dot">.</span></span
     ></RouterLink
   >

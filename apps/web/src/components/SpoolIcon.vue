@@ -1,51 +1,53 @@
 <script setup lang="ts">
-defineProps<{ color?: string; size?: number }>();
+import { useId } from 'vue';
+
+withDefaults(defineProps<{ color?: string; size?: number }>(), { color: '#8d84f4', size: 64 });
+const sheen = useId();
+const winding = 'M20 29H76V64C76 78 20 78 20 64Z';
 </script>
+
 <template>
-  <svg :width="size || 64" :height="size || 64" viewBox="0 0 80 80" fill="none" aria-hidden="true">
-    <ellipse cx="40" cy="68" rx="25" ry="4" fill="currentColor" opacity=".05" />
-    <!-- Paint back to front: rear flange, wound filament, then front flange. -->
-    <ellipse
-      cx="25"
-      cy="40"
-      rx="15"
-      ry="28"
-      fill="var(--spool-side,#e9eaf0)"
-      stroke="var(--border,#dddfe7)"
-    />
-    <path d="M25 18H54A10 22 0 0 1 54 62H25A10 22 0 0 1 25 18Z" :fill="color || '#8d84f4'" />
-    <path
-      d="M25 18C12 18 12 62 25 62M30 18C17 18 17 62 30 62M35 18C22 18 22 62 35 62M40 18C27 18 27 62 40 62M45 18C32 18 32 62 45 62M50 18C37 18 37 62 50 62"
-      stroke="black"
-      stroke-opacity=".12"
-      stroke-width="1"
-    />
-    <ellipse
-      cx="54"
-      cy="40"
-      rx="15"
-      ry="28"
-      fill="var(--spool-front,#f8f9fb)"
-      stroke="var(--border,#dddfe7)"
-    />
-    <ellipse
-      cx="54"
-      cy="40"
-      rx="10"
-      ry="22"
-      :fill="color || '#8d84f4'"
-      stroke="black"
-      stroke-opacity=".08"
-    />
-    <ellipse
-      cx="54"
-      cy="40"
-      rx="4"
-      ry="8"
-      fill="var(--spool-side,#e9eaf0)"
-      stroke="black"
-      stroke-opacity=".1"
-    />
-    <path d="M62 57v10" :stroke="color || '#8d84f4'" stroke-width="3" stroke-linecap="round" />
+  <svg :width="size" :height="size" viewBox="0 0 96 96" fill="none" aria-hidden="true">
+    <defs>
+      <linearGradient :id="sheen" x2="1" y2=".12">
+        <stop stop-color="#0e1715" stop-opacity=".22" />
+        <stop offset=".32" stop-color="#fff" stop-opacity=".18" />
+        <stop offset=".59" stop-color="#fff" stop-opacity="0" />
+        <stop offset="1" stop-color="#0e1715" stop-opacity=".26" />
+      </linearGradient>
+    </defs>
+
+    <g transform="rotate(-12 48 48)">
+      <!-- Both flanges share the same profile and axis. -->
+      <g fill="var(--spool-side)">
+        <path d="M13 64H83V67C83 75 67 81 48 81S13 75 13 67Z" />
+        <ellipse cx="48" cy="64" rx="35" ry="14" fill="var(--spool-front)" />
+      </g>
+      <path :d="winding" :fill="color" />
+      <path :d="winding" :fill="`url(#${sheen})`" />
+      <g stroke-linecap="round" stroke-width="1.25">
+        <path
+          v-for="y in [38, 45, 52, 59]"
+          :key="y"
+          d="M0 0C3 9 41 14 54 2"
+          :transform="`translate(21 ${y})`"
+          stroke="#15201c"
+          stroke-opacity=".16"
+        />
+      </g>
+
+      <path d="M13 26H83V29C83 37 67 43 48 43S13 37 13 29Z" fill="var(--spool-side)" />
+      <ellipse
+        cx="48"
+        cy="26"
+        rx="35"
+        ry="14"
+        fill="var(--spool-front)"
+        stroke="var(--spool-side)"
+        stroke-width=".9"
+      />
+      <ellipse cx="48" cy="26" rx="11.5" ry="5.2" fill="#34423d" />
+      <path d="M36.5 26a11.5 5.2 0 0 1 23 0c-4-3.8-19-3.8-23 0Z" fill="#192722" />
+    </g>
   </svg>
 </template>
