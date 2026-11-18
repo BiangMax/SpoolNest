@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parse3mf, parseCloudTask } from '../packages/printer-adapters/src';
+import { parse3mf, parseCloudTask, parseCloudFilament } from '../packages/printer-adapters/src';
 import { zipFile, sliceXml } from './helpers';
 describe('来源解析 — 合成测试数据，并非设备验证', () => {
   it('读取逐板逐材料切片估算，保留未知打印结果', async () => {
@@ -71,5 +71,31 @@ describe('来源解析 — 合成测试数据，并非设备验证', () => {
       'unknown',
     );
     expect(() => parseCloudTask({ title: 'missing reliable ID' })).toThrow();
+  });
+  it('云端库存条目解析：颜色规范化、克重换算、未知字段不抛错', () => {
+    const f = parseCloudFilament({
+      id: 727066,
+      filamentVendor: '科雷迪',
+      filamentName: 'PLA Basic',
+      filamentType: 'PLA',
+      color: '#FFFFFFFF',
+      netWeight: 661,
+      totalNetWeight: 1000,
+      inPrinter: true,
+      devId: 'test-device',
+      amsId: 0,
+      slotId: '1',
+      unknownFutureField: { nested: true },
+    });
+    expect(f).not.toBe(null);
+    expect(f!.vendor).toBe('科雷迪');
+    expect(f!.name).toBe('PLA Basic');
+    expect(f!.color).toBe('#FFFFFF');
+    expect(f!.remainingMg).toBe(661000);
+    expect(f!.totalNetWeightMg).toBe(1000000);
+    expect(f!.deviceId).toBe('test-device');
+    expect(f!.slot).toBe('1');
+    expect(parseCloudFilament({ nope: true })).toBe(null);
+    expect(parseCloudFilament({ id: 'not-a-number' })).toBe(null);
   });
 });

@@ -52,6 +52,58 @@ function hex(value: unknown) {
   const cleaned = value.replace(/^#/, '').slice(0, 6);
   return /^[0-9a-f]{6}$/i.test(cleaned) ? `#${cleaned}` : null;
 }
+const filamentHit = z
+  .object({
+    id: z.number().int().safe(),
+    filamentVendor: z.string().max(100).nullable().optional(),
+    filamentName: z.string().max(160).nullable().optional(),
+    filamentType: z.string().max(80).nullable().optional(),
+    color: z.string().max(40).nullable().optional(),
+    netWeight: z.union([z.number(), z.string()]).nullable().optional(),
+    totalNetWeight: z.union([z.number(), z.string()]).nullable().optional(),
+    note: z.string().max(2000).nullable().optional(),
+    inPrinter: z.boolean().nullable().optional(),
+    depleted: z.boolean().nullable().optional(),
+    devId: z.string().max(120).nullable().optional(),
+    amsId: z.number().int().nullable().optional(),
+    slotId: z.union([z.number().int().safe(), z.string()]).nullable().optional(),
+  })
+  .passthrough();
+export type CloudFilament = {
+  id: number;
+  vendor: string | null;
+  name: string | null;
+  material: string | null;
+  color: string | null;
+  remainingMg: number | null;
+  totalNetWeightMg: number | null;
+  note: string | null;
+  inPrinter: boolean;
+  depleted: boolean;
+  deviceId: string | null;
+  amsId: number | null;
+  slot: string | null;
+};
+export function parseCloudFilament(raw: unknown): CloudFilament | null {
+  const r = filamentHit.safeParse(raw);
+  if (!r.success) return null;
+  const h = r.data;
+  return {
+    id: h.id,
+    vendor: h.filamentVendor?.trim() || null,
+    name: h.filamentName?.trim() || null,
+    material: h.filamentType?.trim() || null,
+    color: hex(h.color),
+    remainingMg: amount(h.netWeight),
+    totalNetWeightMg: amount(h.totalNetWeight),
+    note: h.note?.trim() || null,
+    inPrinter: !!h.inPrinter,
+    depleted: !!h.depleted,
+    deviceId: h.devId?.trim() || null,
+    amsId: h.amsId ?? null,
+    slot: h.slotId === undefined || h.slotId === null || h.slotId === '' ? null : String(h.slotId),
+  };
+}
 export function parseCloudTask(raw: unknown): ImportedJob {
   const t = task.parse(raw);
   const materials = (t.amsDetailMapping || []).map((d) => {
@@ -165,5 +217,20 @@ export class BambuCloudAdapter implements PrinterAdapter {
           ? offset + data.hits.length
           : null,
     };
+  }
+  async filament() {
+    // cn 区实机验证（2026-11-18）：该端点返回账户全部云端登记料卷（含手动录入的非
+    // RFID 卷）；netWeight 为云端报告的剩余克数，非打印机实测。
+    const data = z
+      .object({ hits: z.array(z.unknown()).max(1000) })
+      .parse(await this.get('/v1/design-user-service/my/filament/v2'));
+    const spools: CloudFilament[] = [];
+    const warnings: string[] = [];
+    for (const raw of data.hits) {
+      const parsed = parseCloudFilament(raw);
+      if (parsed) spools.push(parsed);
+      else warnings.push('一条云端库存条目结构不兼容，已跳过');
+    }
+    return { spools, warnings };
   }
 }
