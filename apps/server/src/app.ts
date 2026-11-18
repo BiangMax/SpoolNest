@@ -118,6 +118,9 @@ export function createApp(options: AppOptions = {}) {
   app.post<{ Params: { id: string } }>('/api/spools/:id/calibrate', async (req) =>
     store.calibrate(req.params.id, req.body),
   );
+  app.post<{ Params: { id: string } }>('/api/spools/:id/cloud-decision', async (req) =>
+    store.decideCloudSpool(req.params.id, req.body),
+  );
   app.get('/api/jobs', async () => store.jobs());
   app.post('/api/jobs', async (req, reply) => reply.code(201).send(store.addJob(req.body).job));
   app.post<{ Params: { id: string } }>('/api/jobs/:id/review', async (req) =>

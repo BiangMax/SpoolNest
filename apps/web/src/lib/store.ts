@@ -58,6 +58,16 @@ export const useWorkspace = defineStore('workspace', () => {
   const spoolSync = ref<{
     added: number;
     linkedCount: number;
+    localCount: number;
+    cloudCount: number;
+    localOnly: {
+      spoolId: string;
+      label: string;
+      localRemainingMg: number;
+      expectedVersion: number;
+      reason: 'unlinked' | 'not_returned';
+      kept: boolean;
+    }[];
     differences: {
       spoolId: string;
       label: string;
@@ -69,6 +79,44 @@ export const useWorkspace = defineStore('workspace', () => {
   } | null>(null);
   const applyingCloudSpool = ref<string | null>(null),
     spoolSyncError = ref('');
+  async function decideLocalSpool(
+    d: NonNullable<typeof spoolSync.value>['localOnly'][number],
+    decision: 'keep' | 'archive',
+  ) {
+    if (busy.value) return;
+    busy.value = true;
+    applyingCloudSpool.value = d.spoolId;
+    spoolSyncError.value = '';
+    try {
+      const updated = await api<Overview['spools'][number]>(
+        `/spools/${d.spoolId}/cloud-decision`,
+        json('POST', { decision, expectedVersion: d.expectedVersion }),
+      );
+      if (spoolSync.value) {
+        if (decision === 'archive') {
+          spoolSync.value.localOnly = spoolSync.value.localOnly.filter(
+            (x) => x.spoolId !== d.spoolId,
+          );
+          spoolSync.value.localCount--;
+        } else {
+          d.kept = true;
+          d.expectedVersion = updated.version;
+        }
+      }
+      await load();
+      toast(
+        decision === 'keep'
+          ? '已保留本地料卷，后续对照会记住此决定'
+          : '料卷已归档，历史和流水已保留，可在已归档库存恢复',
+      );
+    } catch (e) {
+      spoolSyncError.value = (e as Error).message;
+      await load();
+    } finally {
+      applyingCloudSpool.value = null;
+      busy.value = false;
+    }
+  }
   async function applyCloudWeight(d: NonNullable<typeof spoolSync.value>['differences'][number]) {
     if (busy.value) return;
     busy.value = true;
@@ -113,6 +161,8 @@ export const useWorkspace = defineStore('workspace', () => {
       if (result.differences.length)
         parts.push(`克重差异 ${result.differences.length} 卷（本地数值未覆盖）`);
       if (result.warnings.length) parts.push(`提示 ${result.warnings.length} 条`);
+      if (result.localOnly.some((s) => !s.kept))
+        parts.push(`本地待裁定 ${result.localOnly.filter((s) => !s.kept).length} 卷`);
       toast(`云端库存同步完成 · ${parts.join('，')}`);
     } catch (e) {
       await load();
@@ -137,6 +187,7 @@ export const useWorkspace = defineStore('workspace', () => {
     applyingCloudSpool,
     spoolSyncError,
     applyCloudWeight,
+    decideLocalSpool,
     load,
     toast,
     mutate,

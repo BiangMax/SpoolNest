@@ -192,7 +192,7 @@ export class Store {
         );
         if (linkedAlready) {
           const s = this.spool(linkedAlready.id as string);
-          this.reportDrift(s, label, remainMg, differences);
+          if (s.status !== 'archived') this.reportDrift(s, label, remainMg, differences);
           continue;
         }
         if (totalMg === null || totalMg <= 0) {
@@ -212,7 +212,7 @@ export class Store {
         const productId = this.findProduct(productInput);
         const candidates = productId
           ? this.db.all<any>(
-              'SELECT id,remaining_mg FROM spool WHERE product_id=? AND cloud_spool_id IS NULL ORDER BY created_at',
+              "SELECT id,remaining_mg FROM spool WHERE product_id=? AND cloud_spool_id IS NULL AND status<>'archived' ORDER BY created_at",
               productId,
             )
           : [];
@@ -229,7 +229,7 @@ export class Store {
         }
         if (chosen) {
           this.db.run(
-            'UPDATE spool SET cloud_spool_id=?,version=version+1 WHERE id=?',
+            'UPDATE spool SET cloud_spool_id=?,cloud_keep_local=0,version=version+1 WHERE id=?',
             hit.id,
             chosen,
           );
@@ -263,7 +263,49 @@ export class Store {
         this.change(id, remainMg, 'initial', 'cloud_report', '拓竹云端库存同步（报告值）');
         added++;
       }
-      return { added, linkedCount: linked.length, linked, differences, warnings };
+      const cloudIds = new Set(hits.map((h) => h.id));
+      const active = this.spools().filter((s) => s.status !== 'archived');
+      const localOnly = active
+        .filter((s) => s.cloudSpoolId == null || !cloudIds.has(s.cloudSpoolId))
+        .map((s) => ({
+          spoolId: s.id,
+          label: `${s.product.brand} ${s.product.name} ${s.product.material} ${s.product.colorHex}`,
+          localRemainingMg: s.remainingMg,
+          expectedVersion: s.version,
+          reason: s.cloudSpoolId == null ? 'unlinked' : 'not_returned',
+          kept: !!this.db.one<any>('SELECT cloud_keep_local FROM spool WHERE id=?', s.id)
+            ?.cloud_keep_local,
+        }));
+      return {
+        added,
+        linkedCount: linked.length,
+        linked,
+        differences,
+        localOnly,
+        localCount: active.length,
+        cloudCount: cloudIds.size,
+        warnings,
+      };
+    });
+  }
+  decideCloudSpool(id: string, raw: unknown) {
+    const input = z
+      .object({ decision: z.enum(['keep', 'archive']), expectedVersion: z.number().int().min(0) })
+      .parse(raw);
+    return this.db.transaction(() => {
+      const s = this.spool(id);
+      if (s.version !== input.expectedVersion)
+        throw new DomainError('料卷已更新，请重新读取云端库存后裁定', 409);
+      if (s.status === 'archived') throw new DomainError('料卷已归档，请重新对照', 409);
+      if (input.decision === 'archive' && s.installed.length)
+        throw new DomainError('请先解绑已安装的料卷，再归档', 409);
+      this.db.run(
+        'UPDATE spool SET cloud_keep_local=?,status=?,version=version+1 WHERE id=?',
+        input.decision === 'keep' ? 1 : 0,
+        input.decision === 'archive' ? 'archived' : s.status,
+        id,
+      );
+      return this.spool(id);
     });
   }
   private reportDrift(

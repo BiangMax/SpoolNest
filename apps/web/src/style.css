@@ -1185,6 +1185,41 @@ code {
 .cloud-sync-result .cloud-diff-content > p + p {
   margin-top: 10px;
 }
+.cloud-count-summary {
+  font-weight: 600;
+}
+.cloud-local-only {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-strong);
+}
+.cloud-local-only > h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.cloud-local-only > p {
+  margin: 0;
+  color: var(--secondary);
+}
+.cloud-local-decision {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.cloud-local-decision > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.cloud-local-decision strong {
+  font-size: 18px;
+}
+.cloud-local-decision span {
+  color: var(--muted);
+  font-size: 11px;
+}
 .cloud-diff-content {
   flex: 1;
   min-width: 0;

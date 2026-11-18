@@ -305,6 +305,89 @@ it('逐卷采用云端重量保留流水，并拒绝重复提交和过期对照'
     ).statusCode,
   ).toBe(409);
 });
+it('云端对照列出本地未对应料卷，保留决定可重复读取，归档不删除历史', async () => {
+  const { app, store } = await setup();
+  const localInput = spoolInput(800000, 'LOCAL');
+  localInput.product.colorName = '';
+  const local = store.addSpools(localInput)[0];
+  const missing = store.addSpools(spoolInput(500000, 'MISSING'))[0];
+  store.db.run('UPDATE spool SET cloud_spool_id=? WHERE id=?', 123, missing.id);
+  const beforeLedger = store.transactions().length;
+  const first = store.syncCloudSpools([]);
+  expect(first).toMatchObject({ localCount: 2, cloudCount: 0 });
+  expect(first.localOnly).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ spoolId: local.id, reason: 'unlinked', kept: false }),
+      expect.objectContaining({ spoolId: missing.id, reason: 'not_returned', kept: false }),
+    ]),
+  );
+  const choose = (id: string, decision: string, expectedVersion: number) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/spools/${id}/cloud-decision`,
+      payload: { decision, expectedVersion },
+    });
+  expect((await choose(local.id, 'keep', local.version)).statusCode).toBe(200);
+  expect(store.spool(local.id).remainingMg).toBe(800000);
+  expect(store.syncCloudSpools([]).localOnly.find((s) => s.spoolId === local.id)?.kept).toBe(true);
+  expect((await choose(local.id, 'archive', local.version)).statusCode).toBe(409);
+  expect((await choose(missing.id, 'archive', missing.version)).statusCode).toBe(200);
+  const archived = store.spool(missing.id);
+  expect(archived.status).toBe('archived');
+  expect(archived.remainingMg).toBe(500000);
+  expect(store.transactions()).toHaveLength(beforeLedger);
+  expect(store.syncCloudSpools([])).toMatchObject({
+    localCount: 1,
+    localOnly: [expect.objectContaining({ spoolId: local.id, kept: true })],
+  });
+  // 云端再次返回已归档卷时，不自动恢复、创建重复卷或要求校准。
+  const cloudHit = {
+    id: 123,
+    vendor: missing.product.brand,
+    name: missing.product.name,
+    material: missing.product.material,
+    color: missing.product.colorHex,
+    remainingMg: 400000,
+    totalNetWeightMg: missing.product.netMg,
+  };
+  expect(store.syncCloudSpools([cloudHit])).toMatchObject({ added: 0, differences: [] });
+  expect(store.spool(missing.id).status).toBe('archived');
+  store.editSpool(missing.id, { ...archived, expectedVersion: archived.version, status: 'opened' });
+  expect(store.spool(missing.id).status).toBe('opened');
+  // 用户保留的本地卷后来获得真实云端关联，旧保留决定重置。
+  const localHit = {
+    id: 456,
+    vendor: local.product.brand,
+    name: local.product.name,
+    material: local.product.material,
+    color: local.product.colorHex,
+    remainingMg: 800000,
+    totalNetWeightMg: local.product.netMg,
+  };
+  expect(store.syncCloudSpools([localHit, cloudHit]).localOnly).toHaveLength(0);
+  expect(store.syncCloudSpools([]).localOnly.find((s) => s.spoolId === local.id)?.kept).toBe(false);
+});
+it('本地料卷裁定不能归档已安装料卷，失败不修改重量或保留决定', async () => {
+  const { app, store } = await setup();
+  const s = store.addSpools(spoolInput())[0];
+  const p = store.addPrinter({
+    name: 'TEST',
+    model: 'A1 mini',
+    serial: 'decision-test',
+    connection: 'manual',
+  });
+  const slots = store.printers().find((printer) => printer.id === p.id)!.slots;
+  store.assign(slots[0].id, { spoolId: s.id });
+  const current = store.spool(s.id);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/spools/${s.id}/cloud-decision`,
+    payload: { decision: 'archive', expectedVersion: current.version },
+  });
+  expect(response.statusCode).toBe(409);
+  expect(store.spool(s.id).status).not.toBe('archived');
+  expect(store.spool(s.id).remainingMg).toBe(800000);
+});
 it('合成云端认证失效有明确状态，不影响离线库存', async () => {
   vi.stubGlobal(
     'fetch',

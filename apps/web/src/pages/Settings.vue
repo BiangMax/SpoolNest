@@ -40,6 +40,7 @@ const spoolSyncNeedsAttention = computed(
   () =>
     !!(
       store.spoolSync?.differences.length ||
+      store.spoolSync?.localOnly.some((s) => !s.kept) ||
       store.spoolSync?.warnings.length ||
       store.spoolSyncError
     ),
@@ -201,11 +202,17 @@ async function preferences() {
           <Info v-if="spoolSyncNeedsAttention" :size="18" />
           <CheckCircle2 v-else :size="18" />
           <div class="cloud-diff-content">
+            <p class="cloud-count-summary">
+              在库 {{ store.spoolSync.localCount }} 卷 · 本次云端返回
+              {{ store.spoolSync.cloudCount }} 卷
+            </p>
             <p v-if="store.spoolSync.differences.length">
               克重差异 {{ store.spoolSync.differences.length }}
               卷，核对后点击“同步”，将这一卷的本地余量更新为右侧云端报告值，并记录校准流水。
             </p>
-            <p v-else>本次对照已无待处理的重量差异。</p>
+            <p v-else-if="!store.spoolSync.localOnly.some((s) => !s.kept)">
+              本次对照已无待处理的差异。
+            </p>
             <div v-if="store.spoolSync.differences.length" class="cloud-diff-list">
               <article
                 v-for="d in store.spoolSync.differences"
@@ -235,6 +242,49 @@ async function preferences() {
                   </button>
                 </div>
               </article>
+            </div>
+            <div v-if="store.spoolSync.localOnly.length" class="cloud-local-only">
+              <h3>本地独有 / 尚未对应的料卷</h3>
+              <p>
+                这些料卷未关联云端，或本次云端未返回。请逐卷裁定：保留为本地库存，或归档移出在库统计。归档会保留历史，可在“已归档”库存恢复。
+              </p>
+              <div class="cloud-diff-list">
+                <article
+                  v-for="d in store.spoolSync.localOnly"
+                  :key="d.spoolId"
+                  class="cloud-diff-row"
+                >
+                  <h3>
+                    {{ d.label }} <span>#{{ shortId(d.spoolId) }}</span>
+                  </h3>
+                  <div class="cloud-local-decision">
+                    <div>
+                      <strong>{{ grams(d.localRemainingMg) }} g</strong>
+                      <span>{{
+                        d.reason === 'unlinked' ? '未关联云端料卷' : '本次云端未返回此料卷'
+                      }}</span>
+                    </div>
+                    <div class="actions">
+                      <button
+                        class="button"
+                        :disabled="store.busy || d.kept"
+                        :aria-label="`保留本地料卷 #${shortId(d.spoolId)}`"
+                        @click="store.decideLocalSpool(d, 'keep')"
+                      >
+                        {{ d.kept ? '已保留本地' : '保留本地' }}
+                      </button>
+                      <button
+                        class="button"
+                        :disabled="store.busy"
+                        :aria-label="`归档料卷 #${shortId(d.spoolId)}`"
+                        @click="store.decideLocalSpool(d, 'archive')"
+                      >
+                        归档
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              </div>
             </div>
             <p v-if="store.spoolSyncError" role="alert">{{ store.spoolSyncError }}</p>
             <p v-if="store.spoolSync.warnings.length">{{ store.spoolSync.warnings.join('；') }}</p>
