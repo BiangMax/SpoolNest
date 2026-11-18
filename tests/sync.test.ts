@@ -10,7 +10,7 @@ const hit = (id: number) => ({
   id,
   deviceId: 'synthetic-device',
   title: `TEST ONLY ${id}`,
-  status: 4,
+  status: 2, // 实机对照（2026-11-18 cn 区）：2=成功
   weight: 55,
   amsDetailMapping: [{ ams: 0, filamentType: 'PLA', sourceColor: 'FFFFFF', weight: 55 }],
 });

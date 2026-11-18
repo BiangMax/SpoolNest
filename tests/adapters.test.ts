@@ -43,7 +43,7 @@ describe('来源解析 — 合成测试数据，并非设备验证', () => {
       id: 123,
       deviceId: 'test-device',
       title: 'TEST ONLY',
-      status: 4,
+      status: 2,
       weight: 75,
       amsDetailMapping: [
         { ams: 0, weight: 55, filamentType: 'PLA', sourceColor: 'FFFFFFFF' },
@@ -56,12 +56,20 @@ describe('来源解析 — 合成测试数据，并非设备验证', () => {
     expect(j.materials[1].sourceSlot).toContain('未验证');
     expect(j.materials.every((m) => m.sourceNozzle === null)).toBe(true);
     expect(j.materials[0].colorHex).toBe('#FFFFFF');
+    expect(j.printStatus).toBe('completed');
   });
   it('云端只有总重不捏造分配，未知状态不宣称完成', () => {
     const j = parseCloudTask({ id: 'x', deviceId: 'a', weight: 100, status: 999 });
     expect(j.materials).toEqual([]);
     expect(j.incomplete).toBe(true);
     expect(j.printStatus).toBe('unknown');
+    // 实机对照（2026-11-18 cn 区）：3=已取消；旧社区注释的 4=完成与实测矛盾，归 unknown。
+    expect(parseCloudTask({ id: 'c', deviceId: 'a', weight: 1, status: 3 }).printStatus).toBe(
+      'cancelled',
+    );
+    expect(parseCloudTask({ id: 'd', deviceId: 'a', weight: 1, status: 4 }).printStatus).toBe(
+      'unknown',
+    );
     expect(() => parseCloudTask({ title: 'missing reliable ID' })).toThrow();
   });
 });

@@ -86,7 +86,17 @@ export function parseCloudTask(raw: unknown): ImportedJob {
       name: t.title || t.designTitle || `拓竹任务 ${t.id}`,
       startedAt: date(t.startTime),
       finishedAt: date(t.endTime),
-      printStatus: t.status === 4 ? 'completed' : t.status === 5 ? 'failed' : 'unknown',
+      // 实机对照（cn 区 2026-11-18，账号实测 8 条，与 Bambu Studio 打印历史逐条核对）：
+      // status 2=成功、3=已取消。5=失败来自社区源码注释，本账号数据未出现，保留候选；
+      // 旧社区注释的 4=完成与本账号实测矛盾，一律归入 unknown，不猜。
+      printStatus:
+        t.status === 2
+          ? 'completed'
+          : t.status === 3
+            ? 'cancelled'
+            : t.status === 5
+              ? 'failed'
+              : 'unknown',
       totalMg,
       materials,
       incomplete,
