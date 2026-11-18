@@ -23,6 +23,7 @@ it('磁盘持久化、在线备份、重新打开以及迁移版本正确', asyn
       const db = new Database(file),
         saved = new Store(db);
       expect(saved.spool(s.id).remainingMg).toBe(745000);
+      expect(saved.spool(s.id).lastChangeBatch).toBeGreaterThan(s.lastChangeBatch!);
       expect(saved.job(j.id).reviewStatus).toBe('reviewed');
       expect(saved.transactions()).toHaveLength(2);
       expect(db.one<any>('SELECT MAX(version) AS version FROM schema_migration')?.version).toBe(

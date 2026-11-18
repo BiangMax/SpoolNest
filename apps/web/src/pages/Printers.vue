@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue';
 import { Plus, Printer, Link2, Unplug, Settings2, Clock3, Info } from 'lucide-vue-next';
+import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { date, grams, shortId } from '../lib/format';
 import { type Printer as PrinterType } from '../../../../packages/shared/src';
@@ -90,17 +91,10 @@ async function showHistory() {
 }
 </script>
 <template>
-  <div class="page-heading">
-    <div>
-      <div class="eyebrow">A HOME FOR YOUR PRINTERS</div>
-      <h1>打印机管理</h1>
-      <p>连接你的创作设备，为每个供料来源绑定实体料卷。</p>
-    </div>
-    <div class="actions">
-      <button class="button" @click="showHistory"><Clock3 :size="16" />绑定历史</button
-      ><button class="button primary" @click="add()"><Plus :size="16" />添加打印机</button>
-    </div>
-  </div>
+  <PageHeading title="打印机管理" description="管理打印设备、供料来源和料卷绑定。">
+    <button class="button" @click="showHistory"><Clock3 :size="16" />绑定历史</button
+    ><button class="button primary" @click="add()"><Plus :size="16" />添加打印机</button>
+  </PageHeading>
   <div class="callout">
     <Info :size="18" />
     <p>
@@ -113,7 +107,7 @@ async function showHistory() {
       <header>
         <div class="printer-illustration"><Printer :size="39" stroke-width="1.2" /></div>
         <div class="grow">
-          <span class="eyebrow">BAMBU LAB · {{ p.model }}</span>
+          <span class="eyebrow">{{ p.model }}</span>
           <h2>{{ p.name }}</h2>
           <span class="connection-label"
             ><span class="status-dot gray" />{{
@@ -188,6 +182,7 @@ async function showHistory() {
     </section>
   </div>
   <EmptyState
+    :icon="Printer"
     v-else
     title="为你的工作室添加一台打印机"
     description="先记录设备和料卷绑定。无需连接云端，也可以管理库存与打印任务。"

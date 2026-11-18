@@ -197,6 +197,7 @@ it('云端库存同步：新增、唯一回链、差异只报告、永不覆盖�
     },
     count: 1,
   });
+  const previousBatches = new Map(store.spools().map((s) => [s.id, s.lastChangeBatch!]));
   const first = await app.inject({ method: 'POST', url: '/api/sync/spools', payload: {} });
   expect(first.statusCode).toBe(200);
   const r = first.json();
@@ -220,11 +221,18 @@ it('云端库存同步：新增、唯一回链、差异只报告、永不覆盖�
   );
   expect(grayLinked).toHaveLength(1);
   expect(grayLinked[0].remainingMg).toBe(900000);
+  const batch = white.lastChangeBatch;
+  expect(batch).toBeGreaterThan(Math.max(...previousBatches.values()));
+  expect(spools.filter((s) => s.cloudSpoolId !== null).map((s) => s.lastChangeBatch)).toEqual(
+    Array(4).fill(batch),
+  );
+  for (const s of spools.filter((s) => s.cloudSpoolId === null))
+    expect(s.lastChangeBatch).toBe(previousBatches.get(s.id));
   const second = await app.inject({ method: 'POST', url: '/api/sync/spools', payload: {} });
   expect(second.statusCode).toBe(200);
   expect(second.json().added).toBe(0);
   expect(second.json().differences).toHaveLength(1);
-  expect(store.spools().filter((s) => s.product.name === 'ABS Blue')).toHaveLength(1);
+  expect(store.spools()).toEqual(spools);
 });
 it('逐卷采用云端重量保留流水，并拒绝重复提交和过期对照', async () => {
   const { app, store } = await setup();
@@ -400,6 +408,19 @@ it('合成云端认证失效有明确状态，不影响离线库存', async () =
   expect(store.syncState().status).toBe('auth_expired');
   expect(result.body).not.toContain('secret provider');
   expect(store.spool(s.id).remainingMg).toBe(800000);
+});
+it('拒绝云端重定向，不把令牌转发到跳转地址', async () => {
+  const upstream = vi.fn(async () => Response.redirect('https://redirect.example.test', 302));
+  vi.stubGlobal('fetch', upstream);
+  const { app, store } = await setup();
+  const result = await app.inject({ method: 'POST', url: '/api/sync', payload: {} });
+  expect(upstream).toHaveBeenCalledExactlyOnceWith(
+    'https://api.bambulab.cn/v1/user-service/my/tasks?limit=50&offset=0',
+    expect.objectContaining({ redirect: 'manual' }),
+  );
+  expect(result.statusCode).toBe(502);
+  expect(result.json().message).toContain('HTTP 302');
+  expect(store.jobs()).toHaveLength(0);
 });
 it('重复分页终止并保留断点，不假报全部成功', async () => {
   vi.stubGlobal(

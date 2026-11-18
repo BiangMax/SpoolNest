@@ -3,7 +3,7 @@ import multipart from '@fastify/multipart';
 import staticFiles from '@fastify/static';
 import { timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile, unlink, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { backup } from 'node:sqlite';
@@ -12,6 +12,7 @@ import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { Database, DomainError } from './database';
 import { Store } from './service';
+import type { WorkspaceStorage } from './storage';
 import { BambuCloudAdapter, parse3mf } from '../../../packages/printer-adapters/src';
 export type AppOptions = {
   databasePath?: string;
@@ -21,10 +22,29 @@ export type AppOptions = {
   region?: 'cn' | 'global';
   publicOrigin?: string;
   serveStatic?: boolean;
+  backupFormat?: 'db' | 'sql';
 };
 export function createApp(options: AppOptions = {}) {
-  const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
   const db = new Database(options.databasePath ?? './data/spoolnest.db');
+  return createStorageApp(options, db, async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'spoolnest-backup-'));
+    const path = join(dir, 'backup.db');
+    try {
+      await backup(db.raw, path);
+      return await readFile(path);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+export function createStorageApp<T extends WorkspaceStorage>(
+  options: AppOptions,
+  db: T,
+  backupDatabase: () => Promise<Buffer>,
+) {
+  const backupFormat = options.backupFormat ?? 'db';
+  const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
   const store = new Store(db);
   const adapter = new BambuCloudAdapter(options.bambuToken, options.region);
   let syncing = false;
@@ -109,6 +129,7 @@ export function createApp(options: AppOptions = {}) {
     transactions: store.transactions(),
     sync: syncState(),
     settings: store.preferences(),
+    backupFormat,
   }));
   app.get('/api/spools', async () => store.spools());
   app.post('/api/spools', async (req, reply) => reply.code(201).send(store.addSpools(req.body)));
@@ -192,7 +213,7 @@ export function createApp(options: AppOptions = {}) {
     const body = z.object({ acknowledgeExperimental: z.literal(true) }).parse(req.body);
     if (!options.experimental || !adapter.configured)
       throw new DomainError(
-        '请先在本机设置 BAMBU_EXPERIMENTAL=true 和 BAMBU_ACCESS_TOKEN，再重启服务',
+        '请先在服务环境中设置 BAMBU_EXPERIMENTAL=true 和 BAMBU_ACCESS_TOKEN，再重启服务',
       );
     db.run("UPDATE integration_config SET enabled=1 WHERE id='bambu_cloud'");
     db.run("UPDATE sync_state SET status='ready',error=NULL WHERE id='bambu_cloud'");
@@ -402,23 +423,15 @@ export function createApp(options: AppOptions = {}) {
     }));
     return { created: store.importSpools(inputs).length };
   });
-  app.get('/api/backup', async (req, reply) => {
-    const dir = await mkdtemp(join(tmpdir(), 'spoolnest-backup-'));
-    const path = join(dir, 'backup.db');
-    try {
-      await backup(db.raw, path);
-      const data = await readFile(path);
-      return reply
-        .type('application/octet-stream')
-        .header(
-          'Content-Disposition',
-          `attachment; filename="spoolnest-${new Date().toISOString().slice(0, 10)}.db"`,
-        )
-        .send(data);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+  app.get('/api/backup', async (req, reply) =>
+    reply
+      .type(backupFormat === 'sql' ? 'application/sql' : 'application/octet-stream')
+      .header(
+        'Content-Disposition',
+        `attachment; filename="spoolnest-${new Date().toISOString().slice(0, 10)}.${backupFormat}"`,
+      )
+      .send(await backupDatabase()),
+  );
   if (options.serveStatic !== false && existsSync(resolve('dist/web/index.html'))) {
     app.register(staticFiles, { root: resolve('dist/web') });
     app.setNotFoundHandler((req, reply) =>

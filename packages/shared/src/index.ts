@@ -116,6 +116,7 @@ export type Spool = Omit<z.infer<typeof spoolSchema>, 'product' | 'count'> & {
   createdAt: string;
   installed: string[];
   cloudSpoolId: number | null;
+  lastChangeBatch: number | null;
 };
 export type Material = z.infer<typeof materialSchema> & { id: string; jobId: string };
 export type Allocation = z.infer<typeof allocationSchema>;
@@ -193,6 +194,7 @@ export type SyncState = {
   region: string;
 };
 export type Overview = {
+  backupFormat?: 'db' | 'sql';
   spools: Spool[];
   jobs: Job[];
   printers: Printer[];

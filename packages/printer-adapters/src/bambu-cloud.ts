@@ -180,7 +180,8 @@ export class BambuCloudAdapter implements PrinterAdapter {
     const res = await fetch(base + path, {
       headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(20000),
-      redirect: 'error',
+      // Workers only supports manual/follow; never forward the bearer token to a redirect.
+      redirect: 'manual',
     });
     if (res.status === 401 || res.status === 403)
       throw new Error('认证失效，请重新授权；未更改任何库存');

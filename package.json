@@ -18,7 +18,8 @@
     "backup": "node --import tsx scripts/backup.ts",
     "restore": "node --import tsx scripts/restore.ts",
     "format": "prettier --write apps packages scripts tests docs *.json *.ts *.md .github/workflows/*.yml",
-    "format:check": "prettier --check apps packages scripts tests docs *.json *.ts *.md .github/workflows/*.yml"
+    "format:check": "prettier --check apps packages scripts tests docs *.json *.ts *.md .github/workflows/*.yml",
+    "build:cloudflare": "npm run build && node scripts/build-cloudflare.mjs"
   },
   "dependencies": {
     "@fastify/multipart": "^9.0.3",
@@ -42,6 +43,7 @@
     "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-vue": "^6.0.2",
     "concurrently": "^9.2.1",
+    "esbuild": "0.28.2",
     "prettier": "^3.6.2",
     "typescript": "~5.9.3",
     "vite": "^7.2.2",
