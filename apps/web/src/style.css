@@ -514,7 +514,7 @@ code {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
-  padding: 1px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   overflow: hidden;
   background: var(--border);
