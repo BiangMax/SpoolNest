@@ -653,7 +653,14 @@ code {
   flex-shrink: 0;
   border: 1px solid var(--border);
 }
+.model-thumbnail > * {
+  grid-area: 1 / 1;
+}
+.model-thumbnail img.loaded {
+  opacity: 1;
+}
 .model-thumbnail img {
+  opacity: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;

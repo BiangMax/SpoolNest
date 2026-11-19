@@ -19,6 +19,7 @@ import { useWorkspace } from '../lib/store';
 import { weight, grams, date, dayKey } from '../lib/format';
 import { printLabels } from '../../../../packages/shared/src';
 import PageHeading from '../components/PageHeading.vue';
+import ModelThumbnail from '../components/ModelThumbnail.vue';
 import MetricCard from '../components/MetricCard.vue';
 import SpoolIcon from '../components/SpoolIcon.vue';
 import EmptyState from '../components/EmptyState.vue';
@@ -136,15 +137,7 @@ const greeting = computed(() =>
         </div>
         <div v-if="pending.length" class="pending-list">
           <div v-for="j in pending.slice(0, 4)" :key="j.id" class="pending-row">
-            <div class="model-thumbnail">
-              <img
-                v-if="j.thumbnail"
-                :src="j.thumbnail"
-                alt=""
-                loading="lazy"
-                referrerpolicy="no-referrer"
-              /><Box v-else :size="24" stroke-width="1.5" />
-            </div>
+            <ModelThumbnail :job="j" />
             <div class="grow">
               <strong>{{ j.name }}</strong><small
                 >{{ j.printerName || '设备未关联' }} <span>·</span>

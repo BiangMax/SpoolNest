@@ -14,6 +14,7 @@ import {
   Copy,
   Info,
 } from 'lucide-vue-next';
+import ModelThumbnail from '../components/ModelThumbnail.vue';
 import MetricCard from '../components/MetricCard.vue';
 import FilterToolbar from '../components/FilterToolbar.vue';
 import PageHeading from '../components/PageHeading.vue';
@@ -289,15 +290,7 @@ function detail(j: Job) {
           <tr v-for="j in filtered" :key="j.id">
             <td>
               <button class="job-name-button" @click="detail(j)">
-                <div class="model-thumbnail">
-                  <img
-                    v-if="j.thumbnail"
-                    :src="j.thumbnail"
-                    alt="任务预览"
-                    loading="lazy"
-                    referrerpolicy="no-referrer"
-                  /><Box v-else :size="25" stroke-width="1.3" />
-                </div>
+                <ModelThumbnail :job="j" />
                 <div>
                   <strong>{{ j.name }}</strong><small
                     >{{ sourceLabels[j.source] || j.source }}

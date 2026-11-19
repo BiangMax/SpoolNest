@@ -12,6 +12,7 @@ import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { Database, DomainError } from './database';
 import { Store } from './service';
+import { createThumbnailLookup } from './job-thumbnails';
 import type { WorkspaceStorage } from './storage';
 import { BambuCloudAdapter, parse3mf } from '../../../packages/printer-adapters/src';
 import type { BackupCounts } from '../../../packages/shared/src';
@@ -57,6 +58,7 @@ export function createStorageApp<T extends WorkspaceStorage>(
   const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
   const store = new Store(db);
   const adapter = new BambuCloudAdapter(options.bambuToken, options.region);
+  const thumbnails = createThumbnailLookup(adapter);
   let syncing = false;
   db.run(
     "UPDATE sync_state SET status='failed',error='上次同步被中断，可继续历史批次或重新刷新' WHERE status='syncing'",
@@ -157,6 +159,15 @@ export function createStorageApp<T extends WorkspaceStorage>(
     store.decideCloudSpool(req.params.id, req.body),
   );
   app.get('/api/jobs', async () => store.jobs());
+  app.get<{ Params: { id: string } }>('/api/jobs/:id/thumbnail', async (req) => {
+    const job = db.one<{ external_id: string; external_device_id: string }>(
+      "SELECT external_id,external_device_id FROM print_job WHERE id=? AND source='bambu_cloud'",
+      req.params.id,
+    );
+    const state = syncState();
+    if (!job || !state.enabled || !state.configured) return { thumbnail: null };
+    return { thumbnail: await thumbnails.find(job.external_id, job.external_device_id) };
+  });
   app.post('/api/jobs', async (req, reply) => reply.code(201).send(store.addJob(req.body).job));
   app.post<{ Params: { id: string } }>('/api/jobs/:id/review', async (req) =>
     store.review(req.params.id, req.body),
@@ -236,6 +247,7 @@ export function createStorageApp<T extends WorkspaceStorage>(
   app.post('/api/integration/disconnect', async () => {
     if (syncing) throw new DomainError('同步进行中，请结束后断开', 409);
     adapter.disconnect();
+    thumbnails.clear();
     db.run("UPDATE integration_config SET enabled=0 WHERE id='bambu_cloud'");
     db.run("UPDATE sync_state SET status='unavailable',error=NULL WHERE id='bambu_cloud'");
     return syncState();

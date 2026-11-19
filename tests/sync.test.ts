@@ -57,6 +57,48 @@ it('合成云端分页同步幂等，重同步不覆盖已核对数据', async (
   expect(store.spool(s.id).remainingMg).toBe(745000);
   expect(store.job(j.id).reviewStatus).toBe('reviewed');
 });
+it('失效封面按设备和任务读取新链接，同屏复用请求且不会导入历史或改动核对', async () => {
+  const oldCover = 'https://example.test/old.png';
+  const newCover = 'https://example.test/new.png';
+  const cloud = vi.fn(async () =>
+    Response.json({
+      hits: [
+        { ...hit(1), deviceId: 'other-device', cover: 'https://example.test/other.png' },
+        { ...hit(1), cover: newCover },
+        { ...hit(2), cover: null },
+        hit(3),
+      ],
+    }),
+  );
+  vi.stubGlobal('fetch', cloud);
+  const { app, store } = await setup();
+  const s = store.addSpools(spoolInput())[0];
+  const raw = {
+    name: 'test',
+    printStatus: 'completed',
+    materials: [{ material: 'PLA', suggestedMg: 55000, source: 'manual' }],
+  };
+  const a = store.addJob(raw, 'bambu_cloud', '1', 'synthetic-device', oldCover).job;
+  const b = store.addJob(raw, 'bambu_cloud', '2', 'synthetic-device', oldCover).job;
+  store.review(a.id, reviewInput(store, a.id, [s.id]));
+  const reviewed = store.job(a.id);
+  const ledger = store.transactions();
+  const lookup = (id: string) => app.inject({ method: 'GET', url: `/api/jobs/${id}/thumbnail` });
+  const [one, two] = await Promise.all([lookup(a.id), lookup(b.id)]);
+  expect(one.json()).toEqual({ thumbnail: newCover });
+  expect(two.json()).toEqual({ thumbnail: null });
+  expect(cloud).toHaveBeenCalledTimes(1);
+  expect(store.jobs()).toHaveLength(2);
+  expect(store.job(a.id)).toEqual(reviewed);
+  const sync = await app.inject({ method: 'POST', url: '/api/sync', payload: {} });
+  expect(sync.statusCode).toBe(200);
+  expect(store.job(a.id)).toEqual({ ...reviewed, thumbnail: newCover });
+  expect(store.job(b.id).thumbnail).toBe(oldCover);
+  expect(store.transactions()).toEqual(ledger);
+  await app.inject({ method: 'POST', url: '/api/integration/disconnect' });
+  expect((await lookup(a.id)).json()).toEqual({ thumbnail: null });
+  expect(cloud).toHaveBeenCalledTimes(2);
+});
 it('打印机后补：重同步回填未核对任务的设备关联，已核对任务不回填', async () => {
   const hitOn = (id: number, deviceId: string) => ({ ...hit(id), deviceId });
   vi.stubGlobal(
