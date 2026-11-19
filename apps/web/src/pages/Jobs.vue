@@ -15,9 +15,10 @@ import {
   Info,
 } from 'lucide-vue-next';
 import MetricCard from '../components/MetricCard.vue';
+import FilterToolbar from '../components/FilterToolbar.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
-import { useViewPreference } from '../lib/view-preferences';
+import { filterChip, useViewPreference } from '../lib/view-preferences';
 import { date, grams, shortId, dayKey } from '../lib/format';
 import { api } from '../lib/api';
 import { printLabels, reviewLabels, sourceLabels, type Job } from '../../../../packages/shared/src';
@@ -49,6 +50,19 @@ const store = useWorkspace(),
   undoJob = ref<Job | null>(null),
   saving = ref(false),
   newStatus = ref('unknown');
+const activeFilters = computed(() => [
+  ...filterChip(
+    'printer',
+    printer,
+    '',
+    store.printers.find((p) => p.id === printer.value)?.name ?? printer.value,
+  ),
+  ...filterChip('status', status, '', printLabels[status.value]),
+  ...filterChip('source', source, '', sourceLabels[source.value]),
+  ...filterChip('material', material, ''),
+  ...filterChip('from', from, '', '起始 ' + from.value),
+  ...filterChip('to', to, '', '截止 ' + to.value),
+]);
 const materials = computed(() =>
   [...new Set(store.jobs.flatMap((job) => job.materials.map((entry) => entry.material)))].filter(
     (value): value is string => Boolean(value),
@@ -171,7 +185,7 @@ function detail(j: Job) {
       <Upload :size="16" />导入 3MF</button
     ><button class="button primary" @click="formOpen = true"><Plus :size="16" />添加任务</button>
   </PageHeading>
-  <div class="stat-grid compact">
+  <div class="stat-grid compact job-metrics">
     <MetricCard label="任务总数" :icon="Box" :value="store.jobs.length" note="全部打印记录" />
     <MetricCard
       label="待核对任务"
@@ -187,7 +201,7 @@ function detail(j: Job) {
       note="已记录库存流水"
     />
     <MetricCard
-      label="异常 / 数据待补充"
+      label="异常 / 待补充"
       :icon="Info"
       :value="
         store.jobs.filter((j) => j.reviewStatus === 'error' || j.reviewStatus === 'awaiting_data')
@@ -224,14 +238,16 @@ function detail(j: Job) {
         已忽略
       </button>
     </div>
-    <div class="toolbar padded">
-      <div class="search-field">
-        <Search :size="16" /><input
-          v-model="search"
-          placeholder="搜索打印任务…"
-          aria-label="搜索打印任务"
-        />
-      </div>
+    <FilterToolbar :active="activeFilters">
+      <template #search>
+        <div class="search-field">
+          <Search :size="16" /><input
+            v-model="search"
+            placeholder="搜索打印任务…"
+            aria-label="搜索打印任务"
+          />
+        </div>
+      </template>
       <select v-model="printer" aria-label="筛选打印机">
         <option value="">所有打印机</option>
         <option v-for="p in store.printers" :key="p.id" :value="p.id">{{ p.name }}</option></select
@@ -256,7 +272,7 @@ function detail(j: Job) {
         <span>至</span>
         <input v-model="to" type="date" aria-label="结束日期" />
       </div>
-    </div>
+    </FilterToolbar>
     <div v-if="filtered.length" class="table-scroll">
       <table class="jobs-table">
         <thead>

@@ -5,11 +5,11 @@ import { z } from 'zod';
 import {
   Plus,
   Search,
-  SlidersHorizontal,
+  LayoutGrid,
+  Rows3,
   Download,
   Upload,
   MapPin,
-  ArrowUpDown,
   Boxes,
   Scale,
   History,
@@ -17,9 +17,10 @@ import {
   ArrowRight,
   ChevronDown,
 } from 'lucide-vue-next';
+import FilterToolbar from '../components/FilterToolbar.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
-import { useViewPreference } from '../lib/view-preferences';
+import { filterChip, useViewPreference } from '../lib/view-preferences';
 import { grams, weight, date, shortId, money } from '../lib/format';
 import { download, api } from '../lib/api';
 import { type Spool, transactionLabels } from '../../../../packages/shared/src';
@@ -45,6 +46,7 @@ const store = useWorkspace(),
   ),
   grouping = useViewPreference('inventory.grouping', z.enum(['brand', 'none']).catch('brand')),
   collapsedBrands = useViewPreference('inventory.collapsed-brands', z.array(z.string()).catch([])),
+  layout = useViewPreference('inventory.layout', z.enum(['cards', 'list']).catch('cards')),
   formOpen = ref(false),
   editing = ref<Spool | null>(null),
   detailId = ref<string | null>(null),
@@ -75,6 +77,24 @@ watch(
   },
   { immediate: true },
 );
+const activeFilters = computed(() => [
+  ...filterChip('material', material, ''),
+  ...filterChip('brand', brand, ''),
+  ...filterChip('color', color, ''),
+  ...filterChip(
+    'status',
+    status,
+    'active',
+    {
+      active: '在库耗材',
+      sealed: '未开封',
+      opened: '已开封',
+      empty: '已用尽',
+      archived: '已归档',
+      all: '全部状态',
+    }[status.value],
+  ),
+]);
 const materials = computed(() => [...new Set(store.spools.map((s) => s.product.material))]);
 const brands = computed(() => [...new Set(store.spools.map((s) => s.product.brand))]);
 const colors = computed(() => [...new Set(store.spools.map((s) => s.product.colorHex))]);
@@ -210,10 +230,19 @@ async function exportCsv() {
 </script>
 <template>
   <PageHeading
+    class="inventory-heading"
     title="耗材库存"
-    description="按品牌、材料和颜色查找实体料卷。"
     :count="store.spools.filter((s) => s.status !== 'archived').length"
   >
+    <button
+      class="button"
+      :disabled="importing"
+      @click="csvInput?.click()"
+      aria-label="CSV 批量导入"
+    >
+      <Upload :size="16" />{{ importing ? '导入中…' : '导入' }}
+    </button>
+    <input ref="csvInput" type="file" accept=".csv" hidden @change="csv" />
     <button class="button" @click="exportCsv"><Download :size="16" />导出</button
     ><button
       class="button primary"
@@ -239,7 +268,7 @@ async function exportCsv() {
           种</strong
         ></span
       ><span
-        >低库存
+        >低余量料卷
         <strong
           >{{
             store.spools.filter(
@@ -249,18 +278,18 @@ async function exportCsv() {
           }}
           卷</strong
         ></span
-      ><button class="text-button" :disabled="importing" @click="csvInput?.click()">
-        <Upload :size="14" />{{ importing ? '正在导入…' : 'CSV 批量导入' }}</button
-      ><input ref="csvInput" type="file" accept=".csv" hidden @change="csv" />
+      >
     </div>
-    <div class="toolbar">
-      <div class="search-field">
-        <Search :size="17" /><input
-          v-model="search"
-          placeholder="搜索品牌、材质、颜色或编号…"
-          aria-label="搜索耗材"
-        />
-      </div>
+    <FilterToolbar :active="activeFilters">
+      <template #search>
+        <div class="search-field">
+          <Search :size="17" /><input
+            v-model="search"
+            placeholder="搜索耗材、位置或编号…"
+            aria-label="搜索耗材"
+          />
+        </div>
+      </template>
       <select v-model="material" aria-label="按材质筛选">
         <option value="">所有材质</option>
         <option v-for="m in materials" :key="m" :value="m">
@@ -298,9 +327,35 @@ async function exportCsv() {
         <Boxes :size="14" aria-hidden="true" />按品牌分组
         <span class="brand-group-indicator" aria-hidden="true" />
       </button>
-    </div>
+    </FilterToolbar>
   </section>
-  <div v-if="filtered.length" class="inventory-groups">
+  <div class="inventory-view-line">
+    <span
+      >当前结果 <strong>{{ filtered.length }}</strong> 卷</span
+    >
+    <div class="layout-switch" role="group" aria-label="库存视图">
+      <button
+        type="button"
+        aria-label="卡片视图"
+        :aria-pressed="layout === 'cards'"
+        @click="layout = 'cards'"
+      >
+        <LayoutGrid :size="15" />卡片</button
+      ><button
+        type="button"
+        aria-label="列表视图"
+        :aria-pressed="layout === 'list'"
+        @click="layout = 'list'"
+      >
+        <Rows3 :size="16" />列表
+      </button>
+    </div>
+  </div>
+  <div
+    v-if="filtered.length"
+    class="inventory-groups"
+    :class="{ 'inventory-list': layout === 'list' }"
+  >
     <section v-for="group in groups" :key="group.brand" class="inventory-group">
       <h2 v-if="groupedByBrand && !linkedSpool" class="inventory-group-heading">
         <button
@@ -322,7 +377,10 @@ async function exportCsv() {
       >
         <button v-for="s in group.spools" :key="s.id" class="spool-card" @click="open(s)">
           <div class="spool-card-top">
-            <span class="spool-brand">{{ s.product.brand }}</span><span
+            <span v-if="group.brand && !linkedSpool" class="card-serial">#{{ shortId(s.id) }}</span>
+            <span v-if="!group.brand || linkedSpool" class="spool-brand">{{
+              s.product.brand
+            }}</span><span
               class="badge"
               :class="
                 s.status === 'sealed'
@@ -345,7 +403,7 @@ async function exportCsv() {
             >
           </div>
           <div class="spool-overview">
-            <div class="spool-art" :style="{ '--filament': s.product.colorHex }">
+            <div class="spool-art" aria-hidden="true" :style="{ '--filament': s.product.colorHex }">
               <SpoolIcon :color="s.product.colorHex" :size="74" />
             </div>
             <div class="spool-spec">
@@ -372,8 +430,9 @@ async function exportCsv() {
             <span><MapPin :size="13" />{{ s.location || '未设位置' }}</span
             ><span>{{ Math.round((s.remainingMg / s.product.netMg) * 100) }}%</span>
           </div>
-          <div class="spool-id">
-            #{{ shortId(s.id) }}<span v-if="s.installed.length" class="installed-dot">已安装</span>
+          <div v-if="!group.brand || linkedSpool || s.installed.length" class="spool-id">
+            <span v-if="!group.brand || linkedSpool">#{{ shortId(s.id) }}</span
+            ><span v-if="s.installed.length" class="installed-dot">已安装</span>
           </div></button
         ><button
           v-if="!groupedByBrand"

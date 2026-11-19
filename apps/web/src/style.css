@@ -3310,3 +3310,304 @@ table,
 .restore-tools input {
   max-width: 100%;
 }
+
+/* Inventory views share one card and one detail entry point. */
+.inventory-controls {
+  margin-bottom: var(--space-3);
+}
+.inventory-view-line,
+.layout-switch,
+.layout-switch button,
+.comparison-symbol,
+.comparison-action {
+  display: flex;
+  align-items: center;
+}
+.inventory-view-line {
+  justify-content: space-between;
+  margin: 0 0 12px;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.inventory-view-line strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.layout-switch {
+  background: var(--surface-soft);
+  border-radius: var(--radius-control);
+  padding: 3px;
+  border: 1px solid var(--border);
+}
+.layout-switch button {
+  gap: 5px;
+  padding: 4px 9px;
+  min-height: 28px;
+  color: var(--muted);
+  font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+}
+.layout-switch button[aria-pressed='true'] {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.spool-card {
+  border-radius: 12px;
+}
+.spool-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+}
+.card-serial {
+  font: 11px var(--font-data);
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
+.spool-art {
+  background: color-mix(in srgb, var(--filament) 9%, var(--surface-soft));
+  border: 1px solid color-mix(in srgb, var(--filament) 18%, var(--border));
+  border-radius: 14px;
+}
+.spool-card .badge.subtle {
+  background: var(--surface-soft);
+  color: var(--secondary);
+}
+.spool-card .progress {
+  height: 4px;
+}
+.spool-card .progress > span,
+.color-dot {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 21%, transparent);
+}
+.inventory-list .spool-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+.inventory-list .spool-card {
+  display: grid;
+  grid-template-columns: minmax(0, 2.5fr) minmax(0, 1fr) minmax(7rem, auto);
+  column-gap: 20px;
+  row-gap: 2px;
+  align-items: center;
+  border: 0;
+  border-radius: 0;
+  padding: 12px 16px;
+  background: transparent;
+}
+.inventory-list .spool-card:first-child {
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+}
+.inventory-list .spool-card:last-child {
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+}
+.inventory-list .spool-card + .spool-card {
+  border-top: 1px solid var(--border);
+}
+.inventory-list .spool-card:hover {
+  transform: none;
+  background: var(--surface-hover);
+  box-shadow: none;
+}
+.inventory-list .spool-overview,
+.inventory-list .spool-spec {
+  display: contents;
+}
+.inventory-list .spool-art {
+  grid-area: 1/1/3/2;
+  width: 20px;
+  height: 20px;
+  align-self: center;
+  border-radius: 50%;
+  background: var(--filament);
+  border: 1px solid var(--border-strong);
+}
+.inventory-list .spool-art svg,
+.inventory-list .progress,
+.inventory-list .spool-card-bottom > span:last-child {
+  display: none;
+}
+.inventory-list .spool-spec h3,
+.inventory-list .spool-product {
+  margin: 0 0 0 32px;
+}
+.inventory-list .spool-spec h3 {
+  grid-area: 1/1;
+}
+.inventory-list .spool-product {
+  grid-area: 2/1;
+}
+.inventory-list .spool-quantity {
+  grid-area: 1/2;
+  margin: 0;
+}
+.inventory-list .spool-quantity strong {
+  font-size: 17px;
+}
+.inventory-list .spool-card-bottom {
+  grid-area: 2/2;
+  margin: 0;
+}
+.inventory-list .spool-card-top {
+  grid-area: 1/3/3/4;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 4px;
+}
+.inventory-list .spool-id {
+  grid-column: 1/-1;
+  border: 0;
+  padding: 0;
+  margin: 0 0 0 32px;
+  justify-content: flex-start;
+  gap: 8px;
+}
+.inventory-list .add-spool-card {
+  min-height: 45px;
+  flex-direction: row;
+  gap: 8px;
+}
+.inventory-list .add-spool-card > div {
+  width: auto;
+  height: auto;
+}
+.comparison-link {
+  gap: 12px;
+  flex-wrap: nowrap;
+  color: var(--text);
+}
+.comparison-symbol {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 9px;
+}
+.comparison-action {
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--accent);
+}
+.comparison-link.settled {
+  background: transparent;
+  border: 0;
+  padding: 4px 0 8px;
+}
+.comparison-link.settled .comparison-symbol {
+  width: auto;
+  height: auto;
+  color: var(--success);
+  background: none;
+}
+.comparison-link.settled .grow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 12px;
+  font-size: 12px;
+}
+.comparison-link.settled .comparison-action {
+  color: var(--secondary);
+}
+@media (max-width: 760px) {
+  .inventory-controls .inventory-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+  }
+  .inventory-summary > span {
+    display: grid;
+    gap: 1px;
+  }
+  .inventory-summary .status-dot {
+    display: none;
+  }
+  .inventory-heading {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .inventory-group-heading {
+    margin-bottom: 8px;
+  }
+  .inventory-view-line {
+    margin-bottom: 6px;
+  }
+  .spool-overview {
+    margin: 10px 0;
+  }
+  .spool-card .spool-art {
+    width: 62px;
+    height: 62px;
+  }
+  .spool-art svg {
+    max-height: 100%;
+  }
+  .inventory-list .spool-card {
+    grid-template-columns: minmax(0, 1fr) minmax(74px, auto);
+    gap: 3px 8px;
+    padding: 11px 12px;
+  }
+  .inventory-list .spool-art {
+    width: 14px;
+    height: 14px;
+    grid-row: 1/3;
+  }
+  .inventory-list .spool-spec h3,
+  .inventory-list .spool-product,
+  .inventory-list .spool-id {
+    margin-left: 23px;
+  }
+  .inventory-list .spool-quantity,
+  .inventory-list .spool-card-bottom {
+    justify-content: flex-end;
+  }
+  .inventory-list .spool-quantity > span {
+    display: none;
+  }
+  .inventory-list .spool-card-top {
+    grid-area: 3/1/4/3;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 23px;
+  }
+  .job-metrics.stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: 14px;
+  }
+  .job-metrics.compact .stat-card {
+    min-height: 0;
+    padding: 10px 6px;
+    text-align: center;
+  }
+  .job-metrics .stat-card > span {
+    display: block;
+    font-size: 11px;
+  }
+  .job-metrics .stat-card > span svg,
+  .job-metrics .stat-foot {
+    display: none;
+  }
+  .job-metrics.compact .stat-card > strong {
+    margin: 3px 0 0;
+    font-size: 21px;
+    letter-spacing: -0.03em;
+  }
+  .job-metrics .stat-card.highlighted {
+    background: var(--surface);
+  }
+  .task-panel .tabs {
+    gap: 12px;
+    justify-content: space-between;
+  }
+}

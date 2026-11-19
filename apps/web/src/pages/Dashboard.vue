@@ -12,6 +12,7 @@ import {
   Box,
   CheckCheck,
   CalendarDays,
+  ListChecks,
   ChevronRight,
 } from 'lucide-vue-next';
 import { useWorkspace } from '../lib/store';
@@ -74,7 +75,15 @@ const greeting = computed(() =>
       <Layers3 :size="16" />管理耗材
     </button>
   </PageHeading>
-  <RouterLink v-if="store.spoolSync" class="comparison-link" to="/settings#comparison">
+  <RouterLink
+    v-if="store.spoolSync"
+    class="comparison-link"
+    :class="{ settled: !store.pendingDifferences }"
+    to="/settings#comparison"
+  >
+    <span class="comparison-symbol" aria-hidden="true"
+      ><ListChecks v-if="store.pendingDifferences" :size="19" /><CheckCheck v-else :size="17"
+    /></span>
     <div class="grow">
       <strong
         >库存对照 ·
@@ -83,7 +92,9 @@ const greeting = computed(() =>
         }}</strong
       ><small>最近对照 {{ date(store.spoolSync.comparedAt, store.data?.settings.timezone) }}</small>
     </div>
-    {{ store.pendingDifferences ? '继续处理' : '查看结果' }} <ArrowRight :size="16" />
+    <span class="comparison-action"
+      >{{ store.pendingDifferences ? '继续处理' : '查看结果' }} <ArrowRight :size="15"
+    /></span>
   </RouterLink>
   <div class="stat-grid">
     <MetricCard
@@ -107,13 +118,7 @@ const greeting = computed(() =>
       unit="g"
       note="含更正与撤销流水"
     />
-    <MetricCard
-      class="highlighted"
-      label="待核对任务"
-      :icon="Clock3"
-      :value="pending.length"
-      unit="项"
-    >
+    <MetricCard label="待核对任务" :icon="Clock3" :value="pending.length" unit="项">
       <RouterLink class="stat-link" to="/jobs">查看任务<ArrowRight :size="14" /></RouterLink>
     </MetricCard>
   </div>
