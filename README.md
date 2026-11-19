@@ -126,6 +126,18 @@ npm start
 
 ## Docker / NAS
 
+从 GitHub Container Registry 安装 `v0.1.0`（`amd64` / `arm64`）。首次安装前，复制 `.env.example` 为 `.env`，设置至少 32 字符的随机 `ADMIN_TOKEN`，并将 `DATABASE_PATH` 设为 `/app/data/spoolnest.db`。
+
+```bash
+docker run -d --name spoolnest --restart unless-stopped --init \
+  --env-file .env -e HOST=0.0.0.0 -e PORT=4310 \
+  -p 127.0.0.1:4310:4310 \
+  -v spoolnest-data:/app/data -v spoolnest-backups:/app/backups \
+  ghcr.io/biangmax/spoolnest:0.1.0
+```
+
+已有 Compose 安装请继续使用原有 Compose 项目与数据卷。也可从源码构建镜像。
+
 ```bash
 cp .env.example .env
 # 在 .env 中设置至少 32 字符、随机生成的 ADMIN_TOKEN
