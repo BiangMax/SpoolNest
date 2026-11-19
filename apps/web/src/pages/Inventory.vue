@@ -427,7 +427,10 @@ async function exportCsv() {
             />
           </div>
           <div class="spool-card-bottom">
-            <span><MapPin :size="13" />{{ s.location || '未设位置' }}</span
+            <span
+              ><MapPin :size="13" /><span class="spool-location">{{
+                s.location || '未设位置'
+              }}</span></span
             ><span>{{ Math.round((s.remainingMg / s.product.netMg) * 100) }}%</span>
           </div>
           <div v-if="!group.brand || linkedSpool || s.installed.length" class="spool-id">

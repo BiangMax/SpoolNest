@@ -780,6 +780,12 @@ code {
   font-size: 11px;
   color: var(--muted);
 }
+.low-list .grow {
+  overflow-wrap: anywhere;
+}
+.low-list .warning-text {
+  flex-shrink: 0;
+}
 .low-list .warning-text small {
   display: inline;
   color: inherit;
@@ -811,6 +817,7 @@ code {
   color: var(--muted);
 }
 .device-pill {
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -819,7 +826,11 @@ code {
   border-radius: 6px;
   padding: 7px 11px;
 }
+.device-pill strong {
+  overflow-wrap: anywhere;
+}
 .device-pill span:last-of-type {
+  flex-shrink: 0;
   color: var(--muted);
 }
 .empty-state {
@@ -1297,6 +1308,9 @@ code {
   display: flex;
   gap: 4px;
   align-items: center;
+  min-width: 0;
+}
+.spool-location {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1921,6 +1935,7 @@ tbody tr:hover {
   margin-top: 18px;
 }
 .spool-detail-hero {
+  overflow-wrap: anywhere;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -1959,6 +1974,7 @@ tbody tr:hover {
   min-width: 90px;
 }
 .detail-meta strong {
+  overflow-wrap: anywhere;
   display: block;
   font-size: 11px;
   color: var(--text);
@@ -3560,7 +3576,7 @@ table,
     max-height: 100%;
   }
   .inventory-list .spool-card {
-    grid-template-columns: minmax(0, 1fr) minmax(74px, auto);
+    grid-template-columns: minmax(0, 3fr) minmax(74px, 2fr);
     gap: 3px 8px;
     padding: 11px 12px;
   }
