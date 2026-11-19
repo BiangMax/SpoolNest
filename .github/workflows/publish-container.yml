@@ -38,10 +38,11 @@ jobs:
         with:
           platforms: arm64
       - name: Build and test both architectures
+        shell: bash
         env:
           ADMIN_TOKEN: ci-only-not-a-real-secret-32-characters
         run: |
-          trap 'docker rm -f spoolnest-release >/dev/null 2>&1 || true' EXIT
+          trap 'if [[ $? != 0 ]]; then docker logs spoolnest-release 2>/dev/null || true; fi; docker rm -f spoolnest-release >/dev/null 2>&1 || true' EXIT
           for arch in amd64 arm64; do
             tag="$IMAGE:$VERSION-$arch"
             docker build --platform "linux/$arch" --tag "$tag" \
@@ -51,8 +52,8 @@ jobs:
             test "$(docker image inspect --format '{{.Architecture}}' "$tag")" = "$arch"
             docker run -d --name spoolnest-release --platform "linux/$arch" \
               --env ADMIN_TOKEN -p 127.0.0.1:4310:4310 "$tag"
-            curl --fail --silent --show-error --retry 30 --retry-connrefused \
-              --retry-delay 2 http://127.0.0.1:4310/api/health |
+            curl --fail --silent --show-error --retry 30 --retry-all-errors \
+              --retry-delay 2 --max-time 8 http://127.0.0.1:4310/api/health |
               jq -e --arg version "$VERSION" '.status == "ok" and .version == $version'
             test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
               http://127.0.0.1:4310/api/overview)" = 401
