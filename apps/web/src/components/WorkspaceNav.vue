@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import {
   LayoutDashboard,
+  ShoppingCart,
   Layers3,
   Printer,
   ChartNoAxesCombined,
@@ -22,6 +23,7 @@ const pendingCount = computed(
 const nav = [
   { path: '/', label: '仪表盘', icon: LayoutDashboard },
   { path: '/inventory', label: '耗材库存', icon: Layers3 },
+  { path: '/restock', label: '补货清单', icon: ShoppingCart },
   { path: '/jobs', label: '打印任务', icon: Box },
   { path: '/printers', label: '打印机管理', icon: Printer },
   { path: '/analytics', label: '数据统计', icon: ChartNoAxesCombined },

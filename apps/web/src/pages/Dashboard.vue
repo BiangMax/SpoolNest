@@ -27,11 +27,6 @@ const active = computed(() => store.spools.filter((s) => s.status !== 'archived'
   remaining = computed(() => active.value.reduce((s, x) => s + x.remainingMg, 0)),
   pending = computed(() =>
     store.jobs.filter((j) => ['pending', 'awaiting_data', 'error'].includes(j.reviewStatus)),
-  ),
-  low = computed(() =>
-    active.value
-      .filter((s) => s.remainingMg < (store.data?.settings.lowStockMg || 0))
-      .sort((a, b) => a.remainingMg - b.remainingMg),
   );
 const month = computed(() => {
   const month = dayKey(new Date().toISOString(), store.data?.settings.timezone).slice(0, 7);
@@ -79,6 +74,17 @@ const greeting = computed(() =>
       <Layers3 :size="16" />管理耗材
     </button>
   </PageHeading>
+  <RouterLink v-if="store.spoolSync" class="comparison-link" to="/settings#comparison">
+    <div class="grow">
+      <strong
+        >库存对照 ·
+        {{
+          store.pendingDifferences ? store.pendingDifferences + ' 卷待处理' : '已处理完毕'
+        }}</strong
+      ><small>最近对照 {{ date(store.spoolSync.comparedAt, store.data?.settings.timezone) }}</small>
+    </div>
+    {{ store.pendingDifferences ? '继续处理' : '查看结果' }} <ArrowRight :size="16" />
+  </RouterLink>
   <div class="stat-grid">
     <MetricCard
       label="在库耗材"
@@ -249,21 +255,22 @@ const greeting = computed(() =>
         <div class="panel-heading">
           <div>
             <h2>
-              低库存提醒 <span class="heading-count">{{ low.length }}</span>
+              待补货 <span class="heading-count">{{ store.neededRestock.length }}</span>
             </h2>
-            <p>低于 {{ grams(store.data?.settings.lowStockMg || 0) }} g 的实体料卷</p>
+            <p>合计余量低于最低备货量的材料和颜色</p>
           </div>
-          <span class="status-dot amber" />
+          <RouterLink class="text-link" to="/restock"
+            >补货清单 <ArrowRight :size="14"
+          /></RouterLink>
         </div>
-        <div v-if="low.length" class="low-list">
+        <div v-if="store.neededRestock.length" class="low-list">
           <RouterLink
-            v-for="s in low.slice(0, 4)"
-            :key="s.id"
-            :to="{ path: '/inventory', query: { q: s.id } }"
-            ><SpoolIcon :color="s.product.colorHex" :size="49" />
+            v-for="s in store.neededRestock.slice(0, 4)"
+            :key="s.material + s.colorHex"
+            to="/restock"
+            ><SpoolIcon :color="s.colorHex" :size="49" />
             <div class="grow">
-              <strong>{{ s.product.brand }} {{ s.product.material }}</strong
-              ><small>{{ s.product.colorName || s.product.colorHex }}</small>
+              <strong>{{ s.material }}</strong><small>{{ s.colorName || s.colorHex }}</small>
             </div>
             <strong class="warning-text"
               >{{ grams(s.remainingMg) }}<small> g</small></strong
@@ -272,7 +279,9 @@ const greeting = computed(() =>
         </div>
         <div v-else class="mini-empty">
           <CheckCheck :size="26" class="success-text" />
-          <p>{{ active.length ? '所有料卷余量充足。' : '添加耗材后，系统会关注每一卷的余量。' }}</p>
+          <p>
+            {{ active.length ? '当前没有待补货规格。' : '添加料卷后，可按材料和颜色跟踪备货。' }}
+          </p>
         </div>
       </section>
     </div>
