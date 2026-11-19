@@ -99,6 +99,22 @@ it('exports a portable SQLite backup from the Durable Object storage adapter', (
     expect(db.one('SELECT COUNT(*) AS n FROM inventory_transaction')).toEqual({ n: 1 });
     const notes = '备注\0打印';
     db.run('UPDATE spool SET notes=?', notes);
+    const snapshot = db.backup().toString();
+    const before = db.fingerprint();
+    expect(db.verify(snapshot).counts).toEqual({ spools: 1, jobs: 0, transactions: 1 });
+    expect(() => db.verify(snapshot.replace('COMMIT;', ''))).toThrow();
+    expect(db.fingerprint()).toBe(before);
+    db.run('UPDATE spool SET notes=?', 'updated');
+    expect(() => db.restore(snapshot, before)).toThrow('重新验证');
+    expect(db.hasPreviousBackup()).toBe(false);
+    const updated = db.fingerprint();
+    expect(() => db.restore(snapshot.replace('COMMIT;', ''), updated)).toThrow();
+    expect(db.fingerprint()).toBe(updated);
+    expect(db.hasPreviousBackup()).toBe(false);
+    db.restore(snapshot, updated);
+    expect(db.previousBackup().toString()).toContain("'updated'");
+    expect(db.fingerprint()).toBe(before);
+    expect(() => db.run('DELETE FROM inventory_transaction')).toThrow('append-only');
     const restored = new DatabaseSync(':memory:');
     try {
       restored.exec(db.backup().toString());

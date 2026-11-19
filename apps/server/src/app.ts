@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import multipart from '@fastify/multipart';
 import staticFiles from '@fastify/static';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,6 +14,15 @@ import { Database, DomainError } from './database';
 import { Store } from './service';
 import type { WorkspaceStorage } from './storage';
 import { BambuCloudAdapter, parse3mf } from '../../../packages/printer-adapters/src';
+import type { BackupCounts } from '../../../packages/shared/src';
+type CloudRecovery = {
+  verify(source: string): Promise<{ counts: BackupCounts; capturedAt: string | null }>;
+  counts(): BackupCounts;
+  fingerprint(): string;
+  restore(source: string, fingerprint: string): unknown;
+  previousBackup(): Buffer;
+  hasPreviousBackup(): boolean;
+};
 export type AppOptions = {
   databasePath?: string;
   adminToken?: string;
@@ -22,6 +31,7 @@ export type AppOptions = {
   region?: 'cn' | 'global';
   publicOrigin?: string;
   serveStatic?: boolean;
+  recovery?: CloudRecovery;
   backupFormat?: 'db' | 'sql';
 };
 export function createApp(options: AppOptions = {}) {
@@ -123,6 +133,9 @@ export function createStorageApp<T extends WorkspaceStorage>(
   app.register(multipart, { limits: { fileSize: 32 * 1024 * 1024, files: 1, fields: 5 } });
   app.get('/api/health', async () => ({ status: 'ok', version: '0.1.0' }));
   app.get('/api/overview', async () => ({
+    hasPreviousBackup: options.recovery?.hasPreviousBackup() ?? false,
+    spoolComparison: store.comparison(),
+    restock: store.restock(),
     spools: store.spools(),
     jobs: store.jobs(),
     printers: store.printers(),
@@ -131,6 +144,7 @@ export function createStorageApp<T extends WorkspaceStorage>(
     settings: store.preferences(),
     backupFormat,
   }));
+  app.put('/api/restock', async (req) => store.updateRestock(req.body));
   app.get('/api/spools', async () => store.spools());
   app.post('/api/spools', async (req, reply) => reply.code(201).send(store.addSpools(req.body)));
   app.put<{ Params: { id: string } }>('/api/spools/:id', async (req) =>
@@ -312,8 +326,7 @@ export function createStorageApp<T extends WorkspaceStorage>(
     syncing = true;
     try {
       const result = await adapter.filament();
-      const summary = store.syncCloudSpools(result.spools);
-      return { ...summary, warnings: [...result.warnings, ...summary.warnings] };
+      return store.syncCloudSpools(result.spools, result.warnings);
     } catch (e) {
       const message = (e as Error).message;
       throw new DomainError(
@@ -423,6 +436,58 @@ export function createStorageApp<T extends WorkspaceStorage>(
     }));
     return { created: store.importSpools(inputs).length };
   });
+  const recovery = options.recovery;
+  if (recovery) {
+    let preview: { ticket: string; digest: string; fingerprint: string; expires: number } | null =
+      null;
+    async function uploaded(req: import('fastify').FastifyRequest) {
+      const part = await req.file({ limits: { fileSize: 16 * 1024 * 1024, files: 1 } });
+      if (!part) throw new DomainError('请选择云端 SQL 备份文件');
+      return (await part.toBuffer()).toString('utf8');
+    }
+    app.post('/api/backup/verify', async (req) => {
+      const source = await uploaded(req);
+      let verified;
+      try {
+        verified = await recovery.verify(source);
+      } catch {
+        throw new DomainError('验证失败。请检查备份是否完整，且由兼容版本的 SpoolNest 云端导出。');
+      }
+      const ticket = randomUUID();
+      preview = {
+        ticket,
+        digest: createHash('sha256').update(source).digest('hex'),
+        fingerprint: recovery.fingerprint(),
+        expires: Date.now() + 15 * 60 * 1000,
+      };
+      return {
+        ticket,
+        capturedAt: verified.capturedAt,
+        current: recovery.counts(),
+        incoming: verified.counts,
+      };
+    });
+    app.post('/api/backup/restore', async (req) => {
+      const source = await uploaded(req);
+      if (syncing) throw new DomainError('正在同步，请稍后重新验证', 409);
+      if (
+        !preview ||
+        preview.ticket !== req.headers['x-restore-ticket'] ||
+        preview.expires < Date.now() ||
+        preview.digest !== createHash('sha256').update(source).digest('hex')
+      )
+        throw new DomainError('文件或验证凭据已变更，请重新验证', 409);
+      const result = recovery.restore(source, preview.fingerprint);
+      preview = null;
+      return result;
+    });
+    app.get('/api/backup/previous', async (req, reply) =>
+      reply
+        .type('application/sql')
+        .header('Content-Disposition', 'attachment; filename="spoolnest-before-restore.sql"')
+        .send(recovery.previousBackup()),
+    );
+  }
   app.get('/api/backup', async (req, reply) =>
     reply
       .type(backupFormat === 'sql' ? 'application/sql' : 'application/octet-stream')

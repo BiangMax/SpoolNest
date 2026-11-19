@@ -4,6 +4,7 @@ export const migrations = [
   '003_spool_cloud_id.sql',
   '004_cloud_keep_local.sql',
   '005_spool_change_batch.sql',
+  '006_restock_rule.sql',
 ];
 export const SCHEMA_VERSION = migrations.length;
 

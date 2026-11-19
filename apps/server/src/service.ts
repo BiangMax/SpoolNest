@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { DomainError, required } from './database';
 import type { WorkspaceStorage } from './storage';
 import {
+  restockInput,
+  type RestockItem,
+  type SpoolComparison,
   spoolSchema,
   spoolEditSchema,
   jobSchema,
@@ -163,7 +166,7 @@ export class Store {
   }
   // 实验性云端库存同步（Bambu）。合并策略：只新增本地没有的卷、对同规格唯一候选回链
   // 云端 ID、克重差异只报告；用户逐卷确认后，可通过校准接口采用云端报告值。
-  syncCloudSpools(raw: unknown[]) {
+  syncCloudSpools(raw: unknown[], adapterWarnings: string[] = []) {
     const hits = z
       .array(
         z
@@ -192,7 +195,7 @@ export class Store {
         localRemainingMg: number;
         expectedVersion: number;
       }[] = [];
-      const warnings: string[] = [];
+      const warnings = [...adapterWarnings];
       for (const hit of hits) {
         const vendor = (hit.vendor || '').trim();
         const name = (hit.name || '').trim();
@@ -292,11 +295,13 @@ export class Store {
           label: `${s.product.brand} ${s.product.name} ${s.product.material} ${s.product.colorHex}`,
           localRemainingMg: s.remainingMg,
           expectedVersion: s.version,
-          reason: s.cloudSpoolId == null ? 'unlinked' : 'not_returned',
+          reason: s.cloudSpoolId == null ? ('unlinked' as const) : ('not_returned' as const),
           kept: !!this.db.one<any>('SELECT cloud_keep_local FROM spool WHERE id=?', s.id)
             ?.cloud_keep_local,
         }));
-      return {
+      const report = {
+        id: randomUUID(),
+        comparedAt: now(),
         added,
         linkedCount: linked.length,
         linked,
@@ -306,16 +311,76 @@ export class Store {
         cloudCount: cloudIds.size,
         warnings,
       };
+      this.saveComparison(report);
+      return report;
+    });
+  }
+  comparison(): SpoolComparison | null {
+    const row = this.db.one<{ value: string }>(
+      "SELECT value FROM settings WHERE id='spool-comparison'",
+    );
+    return row ? JSON.parse(row.value) : null;
+  }
+  private saveComparison(report: SpoolComparison) {
+    this.db.run(
+      "INSERT INTO settings(id,value) VALUES('spool-comparison',?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
+      JSON.stringify(report),
+    );
+  }
+  restock(): RestockItem[] {
+    return this.db
+      .all<RestockItem>(
+        `
+      WITH stock AS (
+        SELECT upper(trim(p.material)) AS material, upper(p.color_hex) AS colorHex,
+          max(p.color_name) AS colorName, sum(s.remaining_mg) AS remainingMg,
+          sum(CASE WHEN s.status='sealed' THEN 1 ELSE 0 END) AS sealed, count(*) AS count
+        FROM spool s JOIN filament_product p ON p.id=s.product_id
+        WHERE s.status!='archived' GROUP BY 1,2
+      ), specs AS (SELECT material,colorHex FROM stock UNION SELECT material,color_hex FROM restock_rule)
+      SELECT k.material,k.colorHex,coalesce(s.colorName,'') AS colorName,
+        coalesce(s.remainingMg,0) AS remainingMg,coalesce(s.sealed,0) AS sealed,coalesce(s.count,0) AS count,
+        r.minimum_mg AS minimumMg,coalesce(r.ordered,0) AS ordered,coalesce(r.version,0) AS version
+      FROM specs k LEFT JOIN stock s USING(material,colorHex)
+      LEFT JOIN restock_rule r ON r.material=k.material AND r.color_hex=k.colorHex
+      ORDER BY k.material,k.colorHex`,
+      )
+      .map((row) => ({ ...row, ordered: !!row.ordered }));
+  }
+  updateRestock(raw: unknown) {
+    const input = restockInput.parse(raw);
+    return this.db.transaction(() => {
+      const row = this.restock().find(
+        (x) => x.material === input.material && x.colorHex === input.colorHex,
+      );
+      if (!row || row.version !== input.expectedVersion)
+        throw new DomainError('补货规格已更新，请刷新后重试', 409);
+      this.db.run(
+        'INSERT INTO restock_rule(material,color_hex,minimum_mg,ordered) VALUES(?,?,?,?) ON CONFLICT(material,color_hex) DO UPDATE SET minimum_mg=excluded.minimum_mg,ordered=excluded.ordered,version=restock_rule.version+1',
+        row.material,
+        row.colorHex,
+        input.minimumMg,
+        Number(input.ordered),
+      );
+      return { saved: true };
     });
   }
   decideCloudSpool(id: string, raw: unknown) {
     const input = z
-      .object({ decision: z.enum(['keep', 'archive']), expectedVersion: z.number().int().min(0) })
+      .object({
+        decision: z.enum(['keep', 'archive']),
+        comparisonId: z.string().optional(),
+        expectedVersion: z.number().int().min(0),
+      })
       .parse(raw);
     return this.db.transaction(() => {
       const s = this.spool(id);
       if (s.version !== input.expectedVersion)
         throw new DomainError('料卷已更新，请重新读取云端库存后裁定', 409);
+      const report = this.comparison();
+      const entry = report?.localOnly.find((d) => d.spoolId === id);
+      if (input.comparisonId && (report?.id !== input.comparisonId || !entry))
+        throw new DomainError('已有新的库存对照，请查看最新结果', 409);
       if (s.status === 'archived') throw new DomainError('料卷已归档，请重新对照', 409);
       if (input.decision === 'archive' && s.installed.length)
         throw new DomainError('请先解绑已安装的料卷，再归档', 409);
@@ -326,6 +391,16 @@ export class Store {
         input.decision === 'archive' ? this.nextSpoolChangeBatch() : null,
         id,
       );
+      if (report && entry) {
+        if (input.decision === 'keep') {
+          entry.kept = true;
+          entry.expectedVersion = s.version + 1;
+        } else {
+          report.localOnly = report.localOnly.filter((x) => x.spoolId !== id);
+          report.localCount--;
+        }
+        this.saveComparison(report);
+      }
       return this.spool(id);
     });
   }
@@ -396,6 +471,7 @@ export class Store {
   calibrate(id: string, raw: unknown) {
     const input = z
       .object({
+        comparisonId: z.string().optional(),
         remainingMg: z.number().int().min(0).max(100_000_000),
         expectedVersion: z.number().int(),
         source: z.enum(['weighed', 'manual', 'cloud_report']),
@@ -408,6 +484,21 @@ export class Store {
         throw new DomainError('料卷已更新，请刷新后重试', 409);
       if (input.source === 'cloud_report' && s.cloudSpoolId == null)
         throw new DomainError('料卷未关联云端库存，请重新同步云端库存后重试', 409);
+      if (input.source === 'cloud_report') {
+        const report = this.comparison();
+        const match = report?.differences.find(
+          (d) =>
+            d.spoolId === id &&
+            d.cloudRemainingMg === input.remainingMg &&
+            d.expectedVersion === input.expectedVersion,
+        );
+        if (input.comparisonId && (report?.id !== input.comparisonId || !match))
+          throw new DomainError('已有新的库存对照，请查看最新结果', 409);
+        if (report && match) {
+          report.differences = report.differences.filter((d) => d.spoolId !== id);
+          this.saveComparison(report);
+        }
+      }
       this.change(
         id,
         this.nextSpoolChangeBatch(),

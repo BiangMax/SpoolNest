@@ -193,7 +193,67 @@ export type SyncState = {
   enabled: boolean;
   region: string;
 };
+export const spoolComparisonSchema = z.object({
+  id: z.string(),
+  comparedAt: z.string().datetime(),
+  added: z.number().int(),
+  linkedCount: z.number().int(),
+  localCount: z.number().int(),
+  cloudCount: z.number().int(),
+  warnings: z.array(z.string()),
+  localOnly: z.array(
+    z.object({
+      spoolId: z.string(),
+      label: z.string(),
+      localRemainingMg: z.number(),
+      expectedVersion: z.number(),
+      reason: z.enum(['unlinked', 'not_returned']),
+      kept: z.boolean(),
+    }),
+  ),
+  differences: z.array(
+    z.object({
+      spoolId: z.string(),
+      label: z.string(),
+      localRemainingMg: z.number(),
+      expectedVersion: z.number(),
+      cloudRemainingMg: z.number(),
+    }),
+  ),
+});
+export type SpoolComparison = z.infer<typeof spoolComparisonSchema>;
+export const restockInput = z.object({
+  material: z.string().min(1).max(80),
+  colorHex: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .transform((x) => x.toUpperCase()),
+  minimumMg: z.number().int().min(0).max(1_000_000_000).nullable(),
+  ordered: z.boolean(),
+  expectedVersion: z.number().int().nonnegative(),
+});
+export type RestockItem = {
+  material: string;
+  colorHex: string;
+  colorName: string;
+  remainingMg: number;
+  sealed: number;
+  count: number;
+  minimumMg: number | null;
+  ordered: boolean;
+  version: number;
+};
+export type BackupCounts = { spools: number; jobs: number; transactions: number };
+export type BackupPreview = {
+  capturedAt: string | null;
+  current: BackupCounts;
+  incoming: BackupCounts;
+  ticket: string;
+};
 export type Overview = {
+  spoolComparison?: SpoolComparison | null;
+  restock?: RestockItem[];
+  hasPreviousBackup?: boolean;
   backupFormat?: 'db' | 'sql';
   spools: Spool[];
   jobs: Job[];

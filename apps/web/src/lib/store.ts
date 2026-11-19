@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { api, json } from './api';
-import type { Overview, Job } from '../../../../packages/shared/src';
+import type { Overview, Job, RestockItem } from '../../../../packages/shared/src';
 export const useWorkspace = defineStore('workspace', () => {
   const data = ref<Overview | null>(null),
     loading = ref(false),
@@ -15,6 +15,13 @@ export const useWorkspace = defineStore('workspace', () => {
     jobs = computed(() => data.value?.jobs ?? []),
     printers = computed(() => data.value?.printers ?? []),
     transactions = computed(() => data.value?.transactions ?? []);
+  const restock = computed(() => data.value?.restock ?? []);
+  const minimumFor = (row: RestockItem) => row.minimumMg ?? data.value?.settings.lowStockMg ?? 0;
+  const neededRestock = computed(() =>
+    restock.value
+      .filter((row) => !row.ordered && row.remainingMg < minimumFor(row))
+      .sort((a, b) => a.remainingMg - b.remainingMg),
+  );
   function toast(text: string) {
     notice.value = text;
     clearTimeout(noticeTimer);
@@ -55,28 +62,12 @@ export const useWorkspace = defineStore('workspace', () => {
       busy.value = false;
     }
   }
-  const spoolSync = ref<{
-    added: number;
-    linkedCount: number;
-    localCount: number;
-    cloudCount: number;
-    localOnly: {
-      spoolId: string;
-      label: string;
-      localRemainingMg: number;
-      expectedVersion: number;
-      reason: 'unlinked' | 'not_returned';
-      kept: boolean;
-    }[];
-    differences: {
-      spoolId: string;
-      label: string;
-      cloudRemainingMg: number;
-      localRemainingMg: number;
-      expectedVersion: number;
-    }[];
-    warnings: string[];
-  } | null>(null);
+  const spoolSync = computed(() => data.value?.spoolComparison ?? null);
+  const pendingDifferences = computed(() =>
+    spoolSync.value
+      ? spoolSync.value.differences.length + spoolSync.value.localOnly.filter((x) => !x.kept).length
+      : 0,
+  );
   const applyingCloudSpool = ref<string | null>(null),
     spoolSyncError = ref('');
   async function decideLocalSpool(
@@ -88,21 +79,14 @@ export const useWorkspace = defineStore('workspace', () => {
     applyingCloudSpool.value = d.spoolId;
     spoolSyncError.value = '';
     try {
-      const updated = await api<Overview['spools'][number]>(
+      await api(
         `/spools/${d.spoolId}/cloud-decision`,
-        json('POST', { decision, expectedVersion: d.expectedVersion }),
+        json('POST', {
+          decision,
+          comparisonId: spoolSync.value?.id,
+          expectedVersion: d.expectedVersion,
+        }),
       );
-      if (spoolSync.value) {
-        if (decision === 'archive') {
-          spoolSync.value.localOnly = spoolSync.value.localOnly.filter(
-            (x) => x.spoolId !== d.spoolId,
-          );
-          spoolSync.value.localCount--;
-        } else {
-          d.kept = true;
-          d.expectedVersion = updated.version;
-        }
-      }
       await load();
       toast(
         decision === 'keep'
@@ -126,16 +110,13 @@ export const useWorkspace = defineStore('workspace', () => {
       await api(
         `/spools/${d.spoolId}/calibrate`,
         json('POST', {
+          comparisonId: spoolSync.value?.id,
           remainingMg: d.cloudRemainingMg,
           expectedVersion: d.expectedVersion,
           source: 'cloud_report',
           notes: '用户确认采用云端库存对照重量（云端报告值，非称重实测）',
         }),
       );
-      if (spoolSync.value)
-        spoolSync.value.differences = spoolSync.value.differences.filter(
-          (x) => x.spoolId !== d.spoolId,
-        );
       await load();
       toast('这一卷已同步云端重量，校准流水已保存');
     } catch (e) {
@@ -156,7 +137,7 @@ export const useWorkspace = defineStore('workspace', () => {
         json('POST', {}),
       );
       await load();
-      spoolSync.value = result;
+
       const parts = [`新增 ${result.added} 卷`, `关联 ${result.linkedCount} 卷`];
       if (result.differences.length)
         parts.push(`克重差异 ${result.differences.length} 卷（库存余量未改动）`);
@@ -184,6 +165,10 @@ export const useWorkspace = defineStore('workspace', () => {
     printers,
     transactions,
     spoolSync,
+    pendingDifferences,
+    restock,
+    minimumFor,
+    neededRestock,
     applyingCloudSpool,
     spoolSyncError,
     applyCloudWeight,

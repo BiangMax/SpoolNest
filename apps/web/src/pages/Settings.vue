@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import {
   ShieldCheck,
   Cloud,
@@ -14,13 +14,14 @@ import {
   ArrowRight,
   CheckCircle2,
 } from 'lucide-vue-next';
+import CloudRecovery from '../components/CloudRecovery.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { download } from '../lib/api';
 import { date, grams, shortId } from '../lib/format';
 import Modal from '../components/Modal.vue';
 const store = useWorkspace(),
-  threshold = ref((store.data?.settings.lowStockMg || 150000) / 1000),
+  threshold = ref((store.data?.settings.lowStockMg ?? 150000) / 1000),
   timezone = ref(store.data?.settings.timezone || 'Asia/Shanghai'),
   enableOpen = ref(false),
   ack = ref(false),
@@ -29,6 +30,26 @@ const store = useWorkspace(),
   backupBusy = ref(false),
   disconnectOpen = ref(false);
 const backupFormat = computed(() => store.data?.backupFormat ?? 'db');
+async function scrollToComparison() {
+  if (location.hash === '#comparison') {
+    await nextTick();
+    document.getElementById('comparison')?.scrollIntoView();
+  }
+}
+onMounted(scrollToComparison);
+watch(() => store.spoolSync?.id, scrollToComparison);
+watch(
+  () => store.data?.settings.lowStockMg,
+  (value) => {
+    if (value !== undefined) threshold.value = value / 1000;
+  },
+);
+watch(
+  () => store.data?.settings.timezone,
+  (value) => {
+    if (value) timezone.value = value;
+  },
+);
 const statusLabels: Record<string, string> = {
   unavailable: '当前数据源未启用',
   ready: '已启用 · 待首次验证',
@@ -194,6 +215,7 @@ async function preferences() {
             /></a>
           </div>
           <div
+            id="comparison"
             v-if="store.spoolSync"
             class="callout cloud-sync-result"
             :class="spoolSyncNeedsAttention ? 'warning' : 'success'"
@@ -201,6 +223,10 @@ async function preferences() {
             <Info v-if="spoolSyncNeedsAttention" :size="18" />
             <CheckCircle2 v-else :size="18" />
             <div class="cloud-diff-content">
+              <p>
+                最近对照 {{ date(store.spoolSync.comparedAt, store.data?.settings.timezone) }} ·
+                {{ store.pendingDifferences }} 卷待处理
+              </p>
               <p class="cloud-count-summary">
                 在库 {{ store.spoolSync.localCount }} 卷 · 本次云端返回
                 {{ store.spoolSync.cloudCount }} 卷
@@ -341,9 +367,10 @@ async function preferences() {
               <Download :size="16" />{{ backupBusy ? '备份中…' : '下载备份' }}
             </button>
           </div>
+          <CloudRecovery v-if="backupFormat === 'sql'" />
           <div class="settings-row">
             <div>
-              <strong>从备份恢复</strong>
+              <strong>{{ backupFormat === 'sql' ? '在本机打开备份副本' : '从备份恢复' }}</strong>
               <template v-if="backupFormat === 'sql'">
                 <p>在终端运行以下命令，将备份导入一个新的 SQLite 数据库文件。</p>
                 <code class="code-block">sqlite3 -bail restored.db &lt; spoolnest-backup.sql</code>
