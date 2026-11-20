@@ -11,7 +11,8 @@ import {
   RefreshCw,
   Radio,
 } from 'lucide-vue-next';
-import PrinterDrawing from '../components/PrinterDrawing.vue';
+import a1MiniImage from '../assets/printers/a1-mini.webp';
+import x2dImage from '../assets/printers/x2d.webp';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { date, grams, shortId } from '../lib/format';
@@ -19,6 +20,11 @@ import { type Printer as PrinterType, type PrinterPresence } from '../../../../p
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import { api } from '../lib/api';
+// Official product images from the A-series and X-series pages of the Bambu Lab Wiki.
+const modelImages = new Map([
+  ['A1 mini', a1MiniImage],
+  ['X2D', x2dImage],
+]);
 const store = useWorkspace(),
   open = ref(false),
   editing = ref<PrinterType | null>(null),
@@ -188,7 +194,12 @@ async function showHistory() {
             ><i />{{ status(p) }}</span
           >
         </div>
-        <div class="device-drawing"><PrinterDrawing :model="p.model" /></div>
+        <img
+          v-if="modelImages.has(p.model)"
+          class="printer-product-photo"
+          :src="modelImages.get(p.model)"
+          alt=""
+        />
         <button class="icon-button" aria-label="编辑打印机" @click="add(p)">
           <Settings2 :size="18" />
         </button>

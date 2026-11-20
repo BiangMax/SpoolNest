@@ -3682,22 +3682,12 @@ table,
   right: 8px;
   top: 8px;
 }
-.device-drawing {
-  display: grid;
-  place-items: center;
-  flex: 0 0 32%;
-  max-width: 155px;
-  color: var(--accent);
-  background-image: radial-gradient(var(--border-strong) 0.8px, transparent 1px);
-  background-size: 9px 9px;
-}
-.printer-drawing {
-  width: 100%;
-  height: auto;
-  max-height: 105px;
-}
-.machine-shade {
-  fill: var(--surface-soft);
+.printer-product-photo {
+  width: 34%;
+  max-width: 178px;
+  height: 132px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .presence-badge {
   display: inline-flex;
@@ -3762,8 +3752,9 @@ table,
     padding-right: 32px;
     min-height: 125px;
   }
-  .device-drawing {
-    flex-basis: 28%;
+  .printer-product-photo {
+    width: 31%;
+    height: 100px;
   }
   .printer-monitor small {
     flex-basis: 100%;
