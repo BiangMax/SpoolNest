@@ -269,3 +269,18 @@ export type Overview = {
 export const mg = (grams: number) => Math.round(grams * 1000);
 export const grams = (value: number) =>
   new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format((value || 0) / 1000);
+
+export type PrinterTemperature = {
+  name: string;
+  current: number | null;
+  target: number | null;
+};
+export type PrinterTelemetry = {
+  reportedAt: string;
+  state: string;
+  progress: number | null;
+  remainingMinutes: number | null;
+  layer: number | null;
+  layers: number | null;
+  temperatures: PrinterTemperature[];
+};

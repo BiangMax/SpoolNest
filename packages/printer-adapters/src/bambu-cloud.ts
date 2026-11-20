@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { readTelemetry } from './telemetry';
 import { jobSchema, mg } from '../../shared/src';
 import type { ImportedJob, PrinterAdapter } from './index';
 const scalar = z.union([z.string().min(1), z.number().int().safe()]);
@@ -168,7 +169,21 @@ export class BambuCloudAdapter implements PrinterAdapter {
   ) {
     this.token = token;
   }
+  private mqttUsername?: string;
+  async telemetry(serial: string, model: string) {
+    if (!this.mqttUsername) {
+      const { uid } = z
+        .object({ uid: scalar })
+        .parse(await this.get('/v1/design-user-service/my/preference'));
+      if (!/^\d+$/.test(String(uid))) throw new Error('无法验证设备账号');
+      this.mqttUsername = 'u_' + uid;
+    }
+    if (!this.token) throw new Error('未配置授权令牌');
+    const host = this.region === 'cn' ? 'cn.mqtt.bambulab.com' : 'us.mqtt.bambulab.com';
+    return readTelemetry(host, this.mqttUsername, this.token, serial, model);
+  }
   disconnect() {
+    this.mqttUsername = undefined;
     this.token = undefined;
   }
   get configured() {

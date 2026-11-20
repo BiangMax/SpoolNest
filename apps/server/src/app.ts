@@ -59,6 +59,10 @@ export function createStorageApp<T extends WorkspaceStorage>(
   const store = new Store(db);
   const adapter = new BambuCloudAdapter(options.bambuToken, options.region);
   const thumbnails = createThumbnailLookup(adapter);
+  const readings = new Map<
+    string,
+    { until: number; result: ReturnType<typeof adapter.telemetry> }
+  >();
   let syncing = false;
   db.run(
     "UPDATE sync_state SET status='failed',error='上次同步被中断，可继续历史批次或重新刷新' WHERE status='syncing'",
@@ -240,6 +244,30 @@ export function createStorageApp<T extends WorkspaceStorage>(
       throw new DomainError('暂时无法读取拓竹云端设备状态', 503);
     }
   });
+  app.get<{ Params: { id: string } }>('/api/printers/:id/telemetry', async (req) => {
+    const state = syncState();
+    if (!state.enabled || !state.configured) throw new DomainError('拓竹云端未连接', 409);
+    const printer = db.one<{ serial: string | null; model: string }>(
+      'SELECT serial,model FROM printer WHERE id=?',
+      req.params.id,
+    );
+    if (!printer?.serial) throw new DomainError('设备未关联云端', 404);
+    const key = JSON.stringify([printer.serial, printer.model]);
+    const now = Date.now();
+    for (const [k, v] of readings) if (v.until <= now) readings.delete(k);
+    let entry = readings.get(key);
+    if (!entry) {
+      entry = { until: now + 35_000, result: adapter.telemetry(printer.serial, printer.model) };
+      readings.set(key, entry);
+    }
+    try {
+      const data = await entry.result;
+      if (!adapter.configured) throw new Error();
+      return data;
+    } catch {
+      throw new DomainError('暂时无法读取设备遥测', 503);
+    }
+  });
   app.post('/api/printers', async (req) => store.addPrinter(req.body));
   app.put<{ Params: { id: string } }>('/api/printers/:id', async (req) =>
     store.editPrinter(req.params.id, req.body),
@@ -268,6 +296,7 @@ export function createStorageApp<T extends WorkspaceStorage>(
     if (syncing) throw new DomainError('同步进行中，请结束后断开', 409);
     adapter.disconnect();
     thumbnails.clear();
+    readings.clear();
     db.run("UPDATE integration_config SET enabled=0 WHERE id='bambu_cloud'");
     db.run("UPDATE sync_state SET status='unavailable',error=NULL WHERE id='bambu_cloud'");
     return syncState();

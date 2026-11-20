@@ -13,6 +13,7 @@ import {
 } from 'lucide-vue-next';
 import a1MiniImage from '../assets/printers/a1-mini.webp';
 import x2dImage from '../assets/printers/x2d.webp';
+import PrinterTelemetryPanel from '../components/PrinterTelemetryPanel.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { date, grams, shortId } from '../lib/format';
@@ -204,6 +205,14 @@ async function showHistory() {
           <Settings2 :size="18" />
         </button>
       </header>
+      <PrinterTelemetryPanel
+        v-if="enabled && p.serial"
+        :key="p.serial + p.model"
+        :printer-id="p.id"
+        :online="presence.online[p.id]"
+        :checked-at="presence.checkedAt"
+        :timezone="store.data?.settings.timezone"
+      />
       <div class="printer-meta">
         <span
           >任务同步
