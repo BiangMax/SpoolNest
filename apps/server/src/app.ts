@@ -220,6 +220,26 @@ export function createStorageApp<T extends WorkspaceStorage>(
     return reply.send({ created, duplicates: jobs.length - created, jobs: imported });
   });
   app.get('/api/printers', async () => store.printers());
+  app.get('/api/printers/presence', async () => {
+    const state = syncState();
+    const local = db.all<{ id: string; serial: string }>(
+      "SELECT id,serial FROM printer WHERE serial IS NOT NULL AND serial <> ''",
+    );
+    if (!state.enabled || !state.configured || !local.length)
+      return { checkedAt: null, online: {} };
+    try {
+      const { devices } = await adapter.testConnection();
+      const bySerial = new Map(devices.map((d) => [d.serial, d.online]));
+      const online: Record<string, boolean> = {};
+      for (const p of local) {
+        const value = bySerial.get(p.serial);
+        if (value !== undefined) online[p.id] = value;
+      }
+      return { checkedAt: new Date().toISOString(), online };
+    } catch {
+      throw new DomainError('暂时无法读取拓竹云端设备状态', 503);
+    }
+  });
   app.post('/api/printers', async (req) => store.addPrinter(req.body));
   app.put<{ Params: { id: string } }>('/api/printers/:id', async (req) =>
     store.editPrinter(req.params.id, req.body),

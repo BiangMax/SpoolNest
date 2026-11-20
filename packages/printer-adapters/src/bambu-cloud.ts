@@ -194,7 +194,12 @@ export class BambuCloudAdapter implements PrinterAdapter {
     const data = z
       .object({ devices: z.array(z.unknown()) })
       .parse(await this.get('/v1/iot-service/api/user/bind'));
-    return { devices: data.devices };
+    const devices: { serial: string; online: boolean }[] = [];
+    for (const raw of data.devices) {
+      const device = z.object({ dev_id: z.string().min(1), online: z.boolean() }).safeParse(raw);
+      if (device.success) devices.push({ serial: device.data.dev_id, online: device.data.online });
+    }
+    return { devices };
   }
   async history(offset = 0) {
     const data = z

@@ -482,3 +482,36 @@ it('重复分页终止并保留断点，不假报全部成功', async () => {
   expect(store.syncState().cursor).toBe('50');
   expect(store.jobs()).toHaveLength(50);
 });
+
+it('设备在线状态按序列号匹配，缺失或上游错误不能当作离线', async () => {
+  const { app, store } = await setup();
+  const add = (serial: string) => store.addPrinter({ name: '同名设备', model: 'X2D', serial });
+  const a = add('device-a'),
+    b = add('device-b'),
+    c = add('device-c');
+  const read = () => app.inject({ method: 'GET', url: '/api/printers/presence' });
+  const upstream = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        devices: [
+          { dev_id: 'device-a', online: false, print_status: 'ACTIVE' },
+          { dev_id: 'device-b', online: true, dev_access_code: 'private-fixture' },
+          { dev_id: 'device-c', online: 'false' },
+          { dev_id: 'unmatched-device', online: true },
+        ],
+      }),
+    )
+    .mockResolvedValueOnce(new Response('', { status: 503 }));
+  vi.stubGlobal('fetch', upstream);
+  const result = (await read()).json();
+  expect(result).toEqual({
+    checkedAt: expect.any(String),
+    online: { [a.id]: false, [b.id]: true },
+  });
+  expect(result.online[c.id]).toBeUndefined();
+  expect((await read()).statusCode).toBe(503);
+  await app.inject({ method: 'POST', url: '/api/integration/disconnect' });
+  expect((await read()).json()).toEqual({ checkedAt: null, online: {} });
+  expect(upstream).toHaveBeenCalledTimes(2);
+});

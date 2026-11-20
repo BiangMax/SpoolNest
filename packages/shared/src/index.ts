@@ -150,6 +150,10 @@ export type SlotBinding = {
   assignedAt: string;
   unassignedAt: string | null;
 };
+export type PrinterPresence = {
+  checkedAt: string | null;
+  online: Record<string, boolean>;
+};
 export type Printer = z.infer<typeof printerSchema> & {
   id: string;
   lastSyncAt: string | null;

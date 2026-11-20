@@ -1,10 +1,21 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
-import { Plus, Printer, Link2, Unplug, Settings2, Clock3, Info } from 'lucide-vue-next';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import {
+  Plus,
+  Printer,
+  Link2,
+  Unplug,
+  Settings2,
+  Clock3,
+  Info,
+  RefreshCw,
+  Radio,
+} from 'lucide-vue-next';
+import PrinterDrawing from '../components/PrinterDrawing.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { date, grams, shortId } from '../lib/format';
-import { type Printer as PrinterType } from '../../../../packages/shared/src';
+import { type Printer as PrinterType, type PrinterPresence } from '../../../../packages/shared/src';
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import { api } from '../lib/api';
@@ -17,6 +28,63 @@ const store = useWorkspace(),
   spoolId = ref(''),
   slotPrinter = ref<PrinterType | null>(null),
   history = ref<any[] | null>(null);
+const presence = ref<PrinterPresence>({ checkedAt: null, online: {} });
+const reading = ref(false),
+  failed = ref(false);
+const enabled = computed(() => !!(store.data?.sync.enabled && store.data.sync.configured));
+const lookupKey = computed(() =>
+  enabled.value
+    ? JSON.stringify(store.printers.filter((p) => p.serial).map((p) => [p.id, p.serial]))
+    : '[]',
+);
+let request: AbortController | undefined;
+async function refresh() {
+  if (document.hidden || lookupKey.value === '[]' || reading.value) return;
+  const controller = new AbortController();
+  request = controller;
+  reading.value = true;
+  try {
+    const result = await api<PrinterPresence>('/printers/presence', { signal: controller.signal });
+    if (!controller.signal.aborted) {
+      presence.value = result;
+      failed.value = false;
+    }
+  } catch {
+    if (!controller.signal.aborted) {
+      failed.value = true;
+      presence.value = { checkedAt: null, online: {} };
+    }
+  } finally {
+    if (!controller.signal.aborted) reading.value = false;
+  }
+}
+function resetPresence() {
+  request?.abort();
+  presence.value = { checkedAt: null, online: {} };
+  reading.value = false;
+  failed.value = false;
+  void refresh();
+}
+watch(lookupKey, resetPresence, { immediate: true });
+let timer: ReturnType<typeof setInterval>;
+onMounted(() => {
+  timer = setInterval(refresh, 60_000);
+  document.addEventListener('visibilitychange', resetPresence);
+});
+onUnmounted(() => {
+  clearInterval(timer);
+  request?.abort();
+  document.removeEventListener('visibilitychange', resetPresence);
+});
+function status(p: PrinterType) {
+  const online = presence.value.online[p.id];
+  if (online === true) return '在线';
+  if (online === false) return '离线';
+  if (!enabled.value) return '云端未连接';
+  if (!p.serial) return '未填序列号';
+  if (reading.value) return '读取中';
+  return failed.value ? '状态未知' : '云端未匹配';
+}
 const form = reactive({ name: '', model: 'A1 mini', serial: '', connection: 'manual' }),
   slot = reactive({ name: '', kind: 'ams', extruderId: '' });
 function add(p: PrinterType | null = null) {
@@ -95,45 +163,53 @@ async function showHistory() {
     <button class="button" @click="showHistory"><Clock3 :size="16" />绑定历史</button
     ><button class="button primary" @click="add()"><Plus :size="16" />添加打印机</button>
   </PageHeading>
-  <div class="callout">
-    <Info :size="18" />
-    <p>
-      设备卡片中的料位为人工维护。X2D
-      喷嘴与云端材料索引的自动映射尚未实机验证；当前绑定不会替代旧任务的历史快照。
-    </p>
+  <div class="printer-monitor" v-if="store.printers.length">
+    <Radio :size="17" /><strong>设备状态</strong>
+    <small role="status">{{
+      failed
+        ? '云端暂不可用'
+        : presence.checkedAt
+          ? '云端读取于 ' + date(presence.checkedAt, store.data?.settings.timezone)
+          : enabled
+            ? '按设备序列号匹配云端'
+            : '拓竹云端未连接'
+    }}</small>
+    <button v-if="lookupKey !== '[]'" class="text-button" :disabled="reading" @click="refresh">
+      <RefreshCw :size="14" />{{ reading ? '读取中' : '刷新状态' }}
+    </button>
   </div>
   <div v-if="store.printers.length" class="printer-grid">
     <section v-for="p in store.printers" :key="p.id" class="panel printer-card">
       <header>
-        <div class="printer-illustration"><Printer :size="39" stroke-width="1.2" /></div>
         <div class="grow">
-          <span class="eyebrow">{{ p.model }}</span>
+          <span class="device-model">{{ p.model }}</span>
           <h2>{{ p.name }}</h2>
-          <span class="connection-label"
-            ><span class="status-dot gray" />{{
-              p.connection === 'manual' ? '手动维护 · 连接未验证' : '连接状态未验证'
-            }}</span
+          <span class="presence-badge" :class="{ online: presence.online[p.id] === true }"
+            ><i />{{ status(p) }}</span
           >
         </div>
+        <div class="device-drawing"><PrinterDrawing :model="p.model" /></div>
         <button class="icon-button" aria-label="编辑打印机" @click="add(p)">
           <Settings2 :size="18" />
         </button>
       </header>
       <div class="printer-meta">
         <span
-          >最近同步 <strong>{{ date(p.lastSyncAt) }}</strong></span
+          >任务同步
+          <strong>{{
+            p.lastSyncAt ? date(p.lastSyncAt, store.data?.settings.timezone) : '尚无记录'
+          }}</strong></span
         ><span
-          >已绑定
+          >供料来源绑定
           <strong
             >{{ p.slots.filter((s) => s.spoolId).length }} / {{ p.slots.length }} 个来源</strong
           ></span
         >
       </div>
       <div v-if="p.extruders.length" class="extruder-list">
-        <span v-for="e in p.extruders" :key="e.id"><i class="extruder-icon" />{{ e.name }}</span
-        ><small>硬件标识 · 协议映射未验证</small>
+        <span v-for="e in p.extruders" :key="e.id"><i class="extruder-icon" />{{ e.name }}</span>
       </div>
-      <div class="slots">
+      <div class="slots" v-if="p.slots.length">
         <button
           v-for="(s, i) in p.slots"
           :key="s.id"
@@ -166,8 +242,12 @@ async function showHistory() {
           ><span v-else class="muted">绑定料卷</span><Link2 :size="15" class="muted" />
         </button>
       </div>
-      <div v-if="!p.slots.length" class="mini-empty">
-        <p>按你的实际配置添加 AMS 或外置供料来源，并手动指定喷嘴。</p>
+      <div v-if="!p.slots.length" class="printer-empty">
+        <Link2 :size="19" />
+        <div>
+          <strong>尚未添加供料来源</strong>
+          <p>添加 AMS 或外置料架，并指定对应喷嘴。</p>
+        </div>
       </div>
       <button
         class="printer-add-slot"
@@ -181,6 +261,9 @@ async function showHistory() {
       </button>
     </section>
   </div>
+  <p v-if="store.printers.length" class="printer-footnote">
+    <Info :size="15" />供料位置与喷嘴映射由你维护，旧任务保留当时的绑定记录。
+  </p>
   <EmptyState
     :icon="Printer"
     v-else
