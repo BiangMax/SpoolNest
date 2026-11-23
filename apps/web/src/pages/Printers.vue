@@ -155,6 +155,23 @@ async function bind() {
     saving.value = false;
   }
 }
+function visibleSlots(printer: PrinterType) {
+  return printer.model === 'A1 mini'
+    ? printer.slots.filter(
+        (source) => source.kind !== 'ams_lite' || !/^AMS lite · [1-4]$/.test(source.name),
+      )
+    : printer.slots;
+}
+function openAddSlot(printer: PrinterType) {
+  slotPrinter.value = printer;
+  const singleNozzle = printer.model === 'A1 mini';
+  Object.assign(slot, {
+    name: '',
+    kind: singleNozzle ? 'external' : 'ams',
+    extruderId: singleNozzle ? (printer.extruders[0]?.id ?? '') : '',
+  });
+  error.value = '';
+}
 async function addSlot() {
   if (!slotPrinter.value) return;
   saving.value = true;
@@ -235,19 +252,19 @@ async function showHistory() {
           <strong>{{
             p.lastSyncAt ? date(p.lastSyncAt, store.data?.settings.timezone) : '尚无记录'
           }}</strong></span
-        ><span
+        ><span v-if="p.model !== 'A1 mini'"
           >供料来源绑定
           <strong
             >{{ p.slots.filter((s) => s.spoolId).length }} / {{ p.slots.length }} 个来源</strong
           ></span
         >
       </div>
-      <div v-if="p.extruders.length" class="extruder-list">
+      <div v-if="p.model !== 'A1 mini' && p.extruders.length" class="extruder-list">
         <span v-for="e in p.extruders" :key="e.id"><i class="extruder-icon" />{{ e.name }}</span>
       </div>
-      <div class="slots" v-if="p.slots.length">
+      <div v-if="visibleSlots(p).length" class="slots">
         <button
-          v-for="(s, i) in p.slots"
+          v-for="(s, i) in visibleSlots(p)"
           :key="s.id"
           class="slot-row"
           @click="
@@ -258,7 +275,8 @@ async function showHistory() {
         >
           <span class="slot-number">{{ s.kind === 'external' ? 'E' : i + 1 }}</span>
           <div class="grow">
-            <strong>{{ s.name }}</strong><small>{{
+            <strong>{{ s.name }}</strong>
+            <small v-if="p.model !== 'A1 mini'">{{
               p.extruders.find((e) => e.id === s.extruderId)?.name || '未指定喷嘴'
             }}</small>
           </div>
@@ -278,21 +296,14 @@ async function showHistory() {
           ><span v-else class="muted">绑定料卷</span><Link2 :size="15" class="muted" />
         </button>
       </div>
-      <div v-if="!p.slots.length" class="printer-empty">
+      <div v-if="p.model !== 'A1 mini' && !p.slots.length" class="printer-empty">
         <Link2 :size="19" />
         <div>
           <strong>尚未添加供料来源</strong>
           <p>添加 AMS 或外置料架，并指定对应喷嘴。</p>
         </div>
       </div>
-      <button
-        class="printer-add-slot"
-        @click="
-          slotPrinter = p;
-          Object.assign(slot, { name: '', kind: 'ams', extruderId: '' });
-          error = '';
-        "
-      >
+      <button class="printer-add-slot" @click="openAddSlot(p)">
         <Plus :size="15" />添加手动供料来源
       </button>
     </section>
@@ -446,7 +457,12 @@ async function showHistory() {
     ><form id="slot-form" class="form-grid" @submit.prevent="addSlot">
       <label class="field full"
         ><span>来源名称 *</span
-        ><input v-model="slot.name" required placeholder="例如 AMS 1 · 槽位 1" /></label
+        ><input
+          v-model="slot.name"
+          required
+          :placeholder="
+            slotPrinter?.model === 'A1 mini' ? '例如 外挂料盘' : '例如 AMS 1 · 槽位 1'
+          " /></label
       ><label class="field"
         ><span>类型</span
         ><select v-model="slot.kind">
@@ -455,7 +471,7 @@ async function showHistory() {
           <option value="external">外置料卷</option>
           <option value="unknown">其他 / 待确认</option>
         </select></label
-      ><label class="field"
+      ><label v-if="slotPrinter?.model !== 'A1 mini'" class="field"
         ><span>手动指定喷嘴</span
         ><select v-model="slot.extruderId">
           <option value="">未确认</option>

@@ -3845,6 +3845,49 @@ table,
   margin-top: 7px;
   accent-color: var(--accent);
 }
+.ams-monitor {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.ams-monitor-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.device-telemetry .ams-monitor dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+.ams-monitor-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.ams-monitor-slots li {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.ams-monitor-slots li > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ams-monitor-slots .color-dot {
+  flex: none;
+}
 @media (max-width: 480px) {
   .device-telemetry {
     margin-inline: 17px;

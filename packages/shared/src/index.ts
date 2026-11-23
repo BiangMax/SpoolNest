@@ -275,6 +275,21 @@ export type PrinterTemperature = {
   current: number | null;
   target: number | null;
 };
+export type FeederTelemetry = {
+  id: number;
+  slots: {
+    number: number;
+    occupied: boolean | null;
+    material: string | null;
+    colorHex: string | null;
+  }[];
+};
+export type Ams2ProTelemetry = FeederTelemetry & {
+  temperature: number | null;
+  humidityPercent: number | null;
+  dryingStatus: number;
+  dryingMinutes: number | null;
+};
 export type PrinterTelemetry = {
   reportedAt: string;
   state: string;
@@ -283,4 +298,6 @@ export type PrinterTelemetry = {
   layer: number | null;
   layers: number | null;
   temperatures: PrinterTemperature[];
+  ams2Pro?: Ams2ProTelemetry[];
+  bmcu?: FeederTelemetry[];
 };

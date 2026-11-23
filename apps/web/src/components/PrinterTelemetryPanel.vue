@@ -74,6 +74,19 @@ const time = computed(() =>
       }).format(new Date(report.value.reportedAt))
     : '',
 );
+
+function formatTemperature(value: number) {
+  return Math.round(value) + '°C';
+}
+const dryingLabels = ['未烘干', '正在检查', '烘干中', '冷却中', '正在停止', '烘干异常', '烘干异常'];
+const feeders = computed(() => [
+  ...(report.value?.ams2Pro ?? []).map((unit) => ({
+    name: 'AMS 2 Pro',
+    unit,
+    climate: unit,
+  })),
+  ...(report.value?.bmcu ?? []).map((unit) => ({ name: 'BMCU', unit, climate: null })),
+]);
 </script>
 
 <template>
@@ -107,17 +120,70 @@ const time = computed(() =>
         <div v-for="sensor in report.temperatures" :key="sensor.name">
           <dt>{{ sensor.name }}</dt>
           <dd>
-            <strong>{{ sensor.current === null ? '—' : sensor.current + '°C' }}</strong>
+            <strong>{{ sensor.current === null ? '—' : formatTemperature(sensor.current) }}</strong>
             <small>{{
               sensor.target === 0
                 ? '未加热'
                 : sensor.target === null
                   ? '目标未知'
-                  : '目标 ' + sensor.target + '°C'
+                  : '目标 ' + formatTemperature(sensor.target)
             }}</small>
           </dd>
         </div>
       </dl>
+      <section
+        v-for="{ name, unit, climate } in feeders"
+        :key="unit.id"
+        class="ams-monitor"
+        :aria-label="name + ' 状态'"
+      >
+        <div class="ams-monitor-heading">
+          <strong
+            >{{ name }}<span v-if="feeders.length > 1"> · {{ unit.id + 1 }}</span></strong
+          >
+          <small v-if="climate">
+            {{ dryingLabels[climate.dryingStatus] ?? '烘干状态未知' }}
+            <template v-if="climate.dryingStatus === 2 && climate.dryingMinutes">
+              · 剩余 {{ climate.dryingMinutes }} 分钟
+            </template>
+          </small>
+        </div>
+        <dl v-if="climate">
+          <div>
+            <dt>料仓温度</dt>
+            <dd>
+              <strong>{{
+                climate.temperature === null ? '—' : formatTemperature(climate.temperature)
+              }}</strong>
+            </dd>
+          </div>
+          <div>
+            <dt>相对湿度</dt>
+            <dd>
+              <strong>{{
+                climate.humidityPercent === null ? '—' : climate.humidityPercent + '%'
+              }}</strong>
+            </dd>
+          </div>
+        </dl>
+        <ul class="ams-monitor-slots" :aria-label="name + ' 槽位'">
+          <li v-for="slot in unit.slots" :key="slot.number">
+            <small>槽位 {{ slot.number }}</small>
+            <span>
+              <i
+                v-if="slot.colorHex"
+                class="color-dot"
+                :style="{ backgroundColor: slot.colorHex }"
+              />
+              {{
+                slot.occupied === false
+                  ? '空'
+                  : (slot.material ?? (slot.occupied ? '已装料' : '未知'))
+              }}
+            </span>
+          </li>
+        </ul>
+      </section>
     </template>
     <p v-else>{{ loading ? '正在读取设备快照…' : '暂未收到设备快照' }}</p>
   </section>
