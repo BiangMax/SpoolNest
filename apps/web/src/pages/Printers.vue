@@ -239,9 +239,12 @@ async function showHistory() {
         </button>
       </header>
       <PrinterTelemetryPanel
-        v-if="enabled && p.serial"
-        :key="p.serial + p.model"
+        v-if="(enabled && p.serial) || p.model === 'A1 mini' || p.model === 'X2D'"
+        :key="JSON.stringify([p.id, p.serial, p.model])"
         :printer-id="p.id"
+        :model="p.model"
+        :serial="p.serial ?? null"
+        :enabled="enabled"
         :online="presence.online[p.id]"
         :checked-at="presence.checkedAt"
         :timezone="store.data?.settings.timezone"
