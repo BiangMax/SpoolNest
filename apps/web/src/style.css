@@ -1007,6 +1007,30 @@ code {
   margin-left: auto;
   color: var(--accent);
 }
+.binding-spool-trigger {
+  min-height: 38px;
+  height: auto;
+  text-align: left;
+  font-size: 12px;
+}
+.binding-spool-trigger > svg,
+.binding-spool-options .color-filter-check {
+  flex: none;
+}
+.color-filter-options.binding-spool-options {
+  z-index: 102;
+  min-width: 0;
+  width: min(var(--reka-select-trigger-width), var(--reka-select-content-available-width));
+}
+.binding-spool-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.binding-spool-label small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
 .toolbar input[type='date'] {
   width: 125px;
 }

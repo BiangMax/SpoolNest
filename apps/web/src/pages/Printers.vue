@@ -10,7 +10,19 @@ import {
   Info,
   RefreshCw,
   Radio,
+  Check,
+  ChevronDown,
 } from 'lucide-vue-next';
+import {
+  SelectRoot,
+  SelectTrigger,
+  SelectPortal,
+  SelectContent,
+  SelectViewport,
+  SelectItem,
+  SelectItemText,
+  SelectItemIndicator,
+} from 'reka-ui';
 import a1MiniImage from '../assets/printers/a1-mini.webp';
 import x2dImage from '../assets/printers/x2d.webp';
 import PrinterTelemetryPanel from '../components/PrinterTelemetryPanel.vue';
@@ -35,6 +47,10 @@ const store = useWorkspace(),
   spoolId = ref(''),
   slotPrinter = ref<PrinterType | null>(null),
   history = ref<any[] | null>(null);
+const bindingSpools = computed(() => store.spools.filter((spool) => spool.status !== 'archived'));
+const selectedSpool = computed(() =>
+  bindingSpools.value.find((spool) => spool.id === spoolId.value),
+);
 const presence = ref<PrinterPresence>({ checkedAt: null, online: {} });
 const reading = ref(false),
   failed = ref(false);
@@ -347,22 +363,72 @@ async function showHistory() {
       }
     "
     ><h3>{{ binding?.name }}</h3>
-    <label class="field"
-      ><span>库存料卷</span
-      ><select v-model="spoolId">
-        <option value="">解绑 / 暂无料卷</option>
-        <option
-          v-for="s in store.spools.filter((s) => s.status !== 'archived')"
-          :key="s.id"
-          :value="s.id"
+    <div class="field">
+      <span id="binding-spool-label">库存料卷</span>
+      <SelectRoot
+        :model-value="spoolId || 'unbound'"
+        @update:model-value="spoolId = !$event || $event === 'unbound' ? '' : String($event)"
+      >
+        <SelectTrigger
+          class="color-filter-trigger binding-spool-trigger"
+          aria-labelledby="binding-spool-label"
         >
-          {{ s.product.brand }} {{ s.product.material }} {{ s.product.colorName }} · #{{
-            shortId(s.id)
-          }}
-          · {{ grams(s.remainingMg) }}g{{ s.installed.length ? ' · 已安装' : '' }}
-        </option>
-      </select></label
-    >
+          <template v-if="selectedSpool">
+            <span
+              class="color-filter-swatch"
+              :style="{ backgroundColor: selectedSpool.product.colorHex }"
+              aria-hidden="true"
+            />
+            <span class="binding-spool-label">
+              {{ selectedSpool.product.brand }} {{ selectedSpool.product.material }}
+              {{ selectedSpool.product.colorName }} · #{{ shortId(selectedSpool.id) }}
+            </span>
+          </template>
+          <span v-else>{{ spoolId ? '当前料卷不在可选库存中' : '解绑 / 暂无料卷' }}</span>
+          <ChevronDown :size="14" aria-hidden="true" />
+        </SelectTrigger>
+        <SelectPortal>
+          <SelectContent
+            class="color-filter-options binding-spool-options"
+            position="popper"
+            :side-offset="6"
+          >
+            <SelectViewport>
+              <SelectItem value="unbound" class="color-filter-option">
+                <SelectItemText>解绑 / 暂无料卷</SelectItemText>
+                <SelectItemIndicator class="color-filter-check"
+                  ><Check :size="14"
+                /></SelectItemIndicator>
+              </SelectItem>
+              <SelectItem
+                v-for="spool in bindingSpools"
+                :key="spool.id"
+                :value="spool.id"
+                class="color-filter-option"
+              >
+                <span
+                  class="color-filter-swatch"
+                  :style="{ backgroundColor: spool.product.colorHex }"
+                  aria-hidden="true"
+                />
+                <SelectItemText class="binding-spool-label">
+                  {{ spool.product.brand }} {{ spool.product.material }}
+                  {{ spool.product.colorName }}
+                  <small>
+                    #{{ shortId(spool.id) }} · {{ grams(spool.remainingMg) }}&nbsp;g{{
+                      spool.installed.length ? ' · 已安装' : ''
+                    }}
+                  </small>
+                </SelectItemText>
+                <SelectItemIndicator class="color-filter-check"
+                  ><Check :size="14"
+                /></SelectItemIndicator>
+              </SelectItem>
+            </SelectViewport>
+          </SelectContent>
+        </SelectPortal>
+      </SelectRoot>
+    </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
     <template #footer
       ><button class="button" @click="binding = null">取消</button
