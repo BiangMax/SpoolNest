@@ -1414,6 +1414,9 @@ td {
 td {
   vertical-align: middle;
 }
+.recent-print-weight {
+  white-space: nowrap;
+}
 td strong {
   font-weight: 500;
 }

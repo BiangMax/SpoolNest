@@ -205,7 +205,7 @@ const greeting = computed(() =>
                     >{{ printLabels[j.printStatus] }}</span
                   >
                 </td>
-                <td class="align-right">
+                <td class="align-right recent-print-weight">
                   {{ j.totalMg === null ? '待补充' : grams(j.totalMg) + ' g' }}
                 </td>
               </tr>
