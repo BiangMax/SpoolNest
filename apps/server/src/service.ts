@@ -576,6 +576,8 @@ export class Store {
         );
         if (exists) {
           const old = this.job(exists.id);
+          if (thumbnail && old.thumbnail !== thumbnail)
+            this.db.run('UPDATE print_job SET thumbnail=? WHERE id=?', thumbnail, old.id);
           if (old.reviews.length === 0 && old.reviewStatus !== 'ignored') {
             const differs =
               old.printStatus !== input.printStatus ||

@@ -12,6 +12,7 @@ import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { Database, DomainError } from './database';
 import { Store } from './service';
+import { createThumbnailLookup } from './job-thumbnails';
 import type { WorkspaceStorage } from './storage';
 import { BambuCloudAdapter, parse3mf } from '../../../packages/printer-adapters/src';
 import type { BackupCounts } from '../../../packages/shared/src';
@@ -57,6 +58,11 @@ export function createStorageApp<T extends WorkspaceStorage>(
   const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
   const store = new Store(db);
   const adapter = new BambuCloudAdapter(options.bambuToken, options.region);
+  const thumbnails = createThumbnailLookup(adapter);
+  const readings = new Map<
+    string,
+    { until: number; result: ReturnType<typeof adapter.telemetry> }
+  >();
   let syncing = false;
   db.run(
     "UPDATE sync_state SET status='failed',error='上次同步被中断，可继续历史批次或重新刷新' WHERE status='syncing'",
@@ -157,6 +163,15 @@ export function createStorageApp<T extends WorkspaceStorage>(
     store.decideCloudSpool(req.params.id, req.body),
   );
   app.get('/api/jobs', async () => store.jobs());
+  app.get<{ Params: { id: string } }>('/api/jobs/:id/thumbnail', async (req) => {
+    const job = db.one<{ external_id: string; external_device_id: string }>(
+      "SELECT external_id,external_device_id FROM print_job WHERE id=? AND source='bambu_cloud'",
+      req.params.id,
+    );
+    const state = syncState();
+    if (!job || !state.enabled || !state.configured) return { thumbnail: null };
+    return { thumbnail: await thumbnails.find(job.external_id, job.external_device_id) };
+  });
   app.post('/api/jobs', async (req, reply) => reply.code(201).send(store.addJob(req.body).job));
   app.post<{ Params: { id: string } }>('/api/jobs/:id/review', async (req) =>
     store.review(req.params.id, req.body),
@@ -209,6 +224,50 @@ export function createStorageApp<T extends WorkspaceStorage>(
     return reply.send({ created, duplicates: jobs.length - created, jobs: imported });
   });
   app.get('/api/printers', async () => store.printers());
+  app.get('/api/printers/presence', async () => {
+    const state = syncState();
+    const local = db.all<{ id: string; serial: string }>(
+      "SELECT id,serial FROM printer WHERE serial IS NOT NULL AND serial <> ''",
+    );
+    if (!state.enabled || !state.configured || !local.length)
+      return { checkedAt: null, online: {} };
+    try {
+      const { devices } = await adapter.testConnection();
+      const bySerial = new Map(devices.map((d) => [d.serial, d.online]));
+      const online: Record<string, boolean> = {};
+      for (const p of local) {
+        const value = bySerial.get(p.serial);
+        if (value !== undefined) online[p.id] = value;
+      }
+      return { checkedAt: new Date().toISOString(), online };
+    } catch {
+      throw new DomainError('暂时无法读取拓竹云端设备状态', 503);
+    }
+  });
+  app.get<{ Params: { id: string } }>('/api/printers/:id/telemetry', async (req) => {
+    const state = syncState();
+    if (!state.enabled || !state.configured) throw new DomainError('拓竹云端未连接', 409);
+    const printer = db.one<{ serial: string | null; model: string }>(
+      'SELECT serial,model FROM printer WHERE id=?',
+      req.params.id,
+    );
+    if (!printer?.serial) throw new DomainError('设备未关联云端', 404);
+    const key = JSON.stringify([printer.serial, printer.model]);
+    const now = Date.now();
+    for (const [k, v] of readings) if (v.until <= now) readings.delete(k);
+    let entry = readings.get(key);
+    if (!entry) {
+      entry = { until: now + 35_000, result: adapter.telemetry(printer.serial, printer.model) };
+      readings.set(key, entry);
+    }
+    try {
+      const data = await entry.result;
+      if (!adapter.configured) throw new Error();
+      return data;
+    } catch {
+      throw new DomainError('暂时无法读取设备遥测', 503);
+    }
+  });
   app.post('/api/printers', async (req) => store.addPrinter(req.body));
   app.put<{ Params: { id: string } }>('/api/printers/:id', async (req) =>
     store.editPrinter(req.params.id, req.body),
@@ -236,6 +295,8 @@ export function createStorageApp<T extends WorkspaceStorage>(
   app.post('/api/integration/disconnect', async () => {
     if (syncing) throw new DomainError('同步进行中，请结束后断开', 409);
     adapter.disconnect();
+    thumbnails.clear();
+    readings.clear();
     db.run("UPDATE integration_config SET enabled=0 WHERE id='bambu_cloud'");
     db.run("UPDATE sync_state SET status='unavailable',error=NULL WHERE id='bambu_cloud'");
     return syncState();

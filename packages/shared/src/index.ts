@@ -150,6 +150,10 @@ export type SlotBinding = {
   assignedAt: string;
   unassignedAt: string | null;
 };
+export type PrinterPresence = {
+  checkedAt: string | null;
+  online: Record<string, boolean>;
+};
 export type Printer = z.infer<typeof printerSchema> & {
   id: string;
   lastSyncAt: string | null;
@@ -265,3 +269,35 @@ export type Overview = {
 export const mg = (grams: number) => Math.round(grams * 1000);
 export const grams = (value: number) =>
   new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format((value || 0) / 1000);
+
+export type PrinterTemperature = {
+  name: string;
+  current: number | null;
+  target: number | null;
+};
+export type FeederTelemetry = {
+  id: number;
+  slots: {
+    number: number;
+    occupied: boolean | null;
+    material: string | null;
+    colorHex: string | null;
+  }[];
+};
+export type Ams2ProTelemetry = FeederTelemetry & {
+  temperature: number | null;
+  humidityPercent: number | null;
+  dryingStatus: number;
+  dryingMinutes: number | null;
+};
+export type PrinterTelemetry = {
+  reportedAt: string;
+  state: string;
+  progress: number | null;
+  remainingMinutes: number | null;
+  layer: number | null;
+  layers: number | null;
+  temperatures: PrinterTemperature[];
+  ams2Pro?: Ams2ProTelemetry[];
+  bmcu?: FeederTelemetry[];
+};

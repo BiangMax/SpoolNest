@@ -1,13 +1,43 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
-import { Plus, Printer, Link2, Unplug, Settings2, Clock3, Info } from 'lucide-vue-next';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
+import {
+  Plus,
+  Printer,
+  Link2,
+  Unplug,
+  Settings2,
+  Clock3,
+  Info,
+  RefreshCw,
+  Radio,
+  Check,
+  ChevronDown,
+} from 'lucide-vue-next';
+import {
+  SelectRoot,
+  SelectTrigger,
+  SelectPortal,
+  SelectContent,
+  SelectViewport,
+  SelectItem,
+  SelectItemText,
+  SelectItemIndicator,
+} from 'reka-ui';
+import a1MiniImage from '../assets/printers/a1-mini.webp';
+import x2dImage from '../assets/printers/x2d.webp';
+import PrinterTelemetryPanel from '../components/PrinterTelemetryPanel.vue';
 import PageHeading from '../components/PageHeading.vue';
 import { useWorkspace } from '../lib/store';
 import { date, grams, shortId } from '../lib/format';
-import { type Printer as PrinterType } from '../../../../packages/shared/src';
+import { type Printer as PrinterType, type PrinterPresence } from '../../../../packages/shared/src';
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import { api } from '../lib/api';
+// Official product images from the A-series and X-series pages of the Bambu Lab Wiki.
+const modelImages = new Map([
+  ['A1 mini', a1MiniImage],
+  ['X2D', x2dImage],
+]);
 const store = useWorkspace(),
   open = ref(false),
   editing = ref<PrinterType | null>(null),
@@ -17,6 +47,67 @@ const store = useWorkspace(),
   spoolId = ref(''),
   slotPrinter = ref<PrinterType | null>(null),
   history = ref<any[] | null>(null);
+const bindingSpools = computed(() => store.spools.filter((spool) => spool.status !== 'archived'));
+const selectedSpool = computed(() =>
+  bindingSpools.value.find((spool) => spool.id === spoolId.value),
+);
+const presence = ref<PrinterPresence>({ checkedAt: null, online: {} });
+const reading = ref(false),
+  failed = ref(false);
+const enabled = computed(() => !!(store.data?.sync.enabled && store.data.sync.configured));
+const lookupKey = computed(() =>
+  enabled.value
+    ? JSON.stringify(store.printers.filter((p) => p.serial).map((p) => [p.id, p.serial]))
+    : '[]',
+);
+let request: AbortController | undefined;
+async function refresh() {
+  if (document.hidden || lookupKey.value === '[]' || reading.value) return;
+  const controller = new AbortController();
+  request = controller;
+  reading.value = true;
+  try {
+    const result = await api<PrinterPresence>('/printers/presence', { signal: controller.signal });
+    if (!controller.signal.aborted) {
+      presence.value = result;
+      failed.value = false;
+    }
+  } catch {
+    if (!controller.signal.aborted) {
+      failed.value = true;
+      presence.value = { checkedAt: null, online: {} };
+    }
+  } finally {
+    if (!controller.signal.aborted) reading.value = false;
+  }
+}
+function resetPresence() {
+  request?.abort();
+  presence.value = { checkedAt: null, online: {} };
+  reading.value = false;
+  failed.value = false;
+  void refresh();
+}
+watch(lookupKey, resetPresence, { immediate: true });
+let timer: ReturnType<typeof setInterval>;
+onMounted(() => {
+  timer = setInterval(refresh, 60_000);
+  document.addEventListener('visibilitychange', resetPresence);
+});
+onUnmounted(() => {
+  clearInterval(timer);
+  request?.abort();
+  document.removeEventListener('visibilitychange', resetPresence);
+});
+function status(p: PrinterType) {
+  const online = presence.value.online[p.id];
+  if (online === true) return '在线';
+  if (online === false) return '离线';
+  if (!enabled.value) return '云端未连接';
+  if (!p.serial) return '未填序列号';
+  if (reading.value) return '读取中';
+  return failed.value ? '状态未知' : '云端未匹配';
+}
 const form = reactive({ name: '', model: 'A1 mini', serial: '', connection: 'manual' }),
   slot = reactive({ name: '', kind: 'ams', extruderId: '' });
 function add(p: PrinterType | null = null) {
@@ -64,6 +155,23 @@ async function bind() {
     saving.value = false;
   }
 }
+function visibleSlots(printer: PrinterType) {
+  return printer.model === 'A1 mini'
+    ? printer.slots.filter(
+        (source) => source.kind !== 'ams_lite' || !/^AMS lite · [1-4]$/.test(source.name),
+      )
+    : printer.slots;
+}
+function openAddSlot(printer: PrinterType) {
+  slotPrinter.value = printer;
+  const singleNozzle = printer.model === 'A1 mini';
+  Object.assign(slot, {
+    name: '',
+    kind: singleNozzle ? 'external' : 'ams',
+    extruderId: singleNozzle ? (printer.extruders[0]?.id ?? '') : '',
+  });
+  error.value = '';
+}
 async function addSlot() {
   if (!slotPrinter.value) return;
   saving.value = true;
@@ -95,47 +203,68 @@ async function showHistory() {
     <button class="button" @click="showHistory"><Clock3 :size="16" />绑定历史</button
     ><button class="button primary" @click="add()"><Plus :size="16" />添加打印机</button>
   </PageHeading>
-  <div class="callout">
-    <Info :size="18" />
-    <p>
-      设备卡片中的料位为人工维护。X2D
-      喷嘴与云端材料索引的自动映射尚未实机验证；当前绑定不会替代旧任务的历史快照。
-    </p>
+  <div class="printer-monitor" v-if="store.printers.length">
+    <Radio :size="17" /><strong>设备状态</strong>
+    <small role="status">{{
+      failed
+        ? '云端暂不可用'
+        : presence.checkedAt
+          ? '云端读取于 ' + date(presence.checkedAt, store.data?.settings.timezone)
+          : enabled
+            ? '按设备序列号匹配云端'
+            : '拓竹云端未连接'
+    }}</small>
+    <button v-if="lookupKey !== '[]'" class="text-button" :disabled="reading" @click="refresh">
+      <RefreshCw :size="14" />{{ reading ? '读取中' : '刷新状态' }}
+    </button>
   </div>
   <div v-if="store.printers.length" class="printer-grid">
     <section v-for="p in store.printers" :key="p.id" class="panel printer-card">
       <header>
-        <div class="printer-illustration"><Printer :size="39" stroke-width="1.2" /></div>
         <div class="grow">
-          <span class="eyebrow">{{ p.model }}</span>
+          <span class="device-model">{{ p.model }}</span>
           <h2>{{ p.name }}</h2>
-          <span class="connection-label"
-            ><span class="status-dot gray" />{{
-              p.connection === 'manual' ? '手动维护 · 连接未验证' : '连接状态未验证'
-            }}</span
+          <span class="presence-badge" :class="{ online: presence.online[p.id] === true }"
+            ><i />{{ status(p) }}</span
           >
         </div>
+        <img
+          v-if="modelImages.has(p.model)"
+          class="printer-product-photo"
+          :src="modelImages.get(p.model)"
+          alt=""
+        />
         <button class="icon-button" aria-label="编辑打印机" @click="add(p)">
           <Settings2 :size="18" />
         </button>
       </header>
+      <PrinterTelemetryPanel
+        v-if="enabled && p.serial"
+        :key="p.serial + p.model"
+        :printer-id="p.id"
+        :online="presence.online[p.id]"
+        :checked-at="presence.checkedAt"
+        :timezone="store.data?.settings.timezone"
+      />
       <div class="printer-meta">
         <span
-          >最近同步 <strong>{{ date(p.lastSyncAt) }}</strong></span
-        ><span
-          >已绑定
+          >任务同步
+          <strong>{{
+            p.lastSyncAt ? date(p.lastSyncAt, store.data?.settings.timezone) : '尚无记录'
+          }}</strong></span
+        ><span v-if="p.model !== 'A1 mini'"
+          >供料来源绑定
           <strong
             >{{ p.slots.filter((s) => s.spoolId).length }} / {{ p.slots.length }} 个来源</strong
           ></span
         >
       </div>
-      <div v-if="p.extruders.length" class="extruder-list">
-        <span v-for="e in p.extruders" :key="e.id"><i class="extruder-icon" />{{ e.name }}</span
-        ><small>硬件标识 · 协议映射未验证</small>
+      <div v-if="p.model !== 'A1 mini' && p.extruders.length" class="extruder-list">
+        <span v-for="e in p.extruders" :key="e.id"><i class="extruder-icon" />{{ e.name }}</span>
       </div>
-      <div class="slots">
+      <div v-if="visibleSlots(p).length" class="slots">
         <button
-          v-for="(s, i) in p.slots"
+          v-for="(s, i) in visibleSlots(p)"
           :key="s.id"
           class="slot-row"
           @click="
@@ -146,7 +275,8 @@ async function showHistory() {
         >
           <span class="slot-number">{{ s.kind === 'external' ? 'E' : i + 1 }}</span>
           <div class="grow">
-            <strong>{{ s.name }}</strong><small>{{
+            <strong>{{ s.name }}</strong>
+            <small v-if="p.model !== 'A1 mini'">{{
               p.extruders.find((e) => e.id === s.extruderId)?.name || '未指定喷嘴'
             }}</small>
           </div>
@@ -166,21 +296,21 @@ async function showHistory() {
           ><span v-else class="muted">绑定料卷</span><Link2 :size="15" class="muted" />
         </button>
       </div>
-      <div v-if="!p.slots.length" class="mini-empty">
-        <p>按你的实际配置添加 AMS 或外置供料来源，并手动指定喷嘴。</p>
+      <div v-if="p.model !== 'A1 mini' && !p.slots.length" class="printer-empty">
+        <Link2 :size="19" />
+        <div>
+          <strong>尚未添加供料来源</strong>
+          <p>添加 AMS 或外置料架，并指定对应喷嘴。</p>
+        </div>
       </div>
-      <button
-        class="printer-add-slot"
-        @click="
-          slotPrinter = p;
-          Object.assign(slot, { name: '', kind: 'ams', extruderId: '' });
-          error = '';
-        "
-      >
+      <button class="printer-add-slot" @click="openAddSlot(p)">
         <Plus :size="15" />添加手动供料来源
       </button>
     </section>
   </div>
+  <p v-if="store.printers.length" class="printer-footnote">
+    <Info :size="15" />供料位置与喷嘴映射由你维护，旧任务保留当时的绑定记录。
+  </p>
   <EmptyState
     :icon="Printer"
     v-else
@@ -244,22 +374,72 @@ async function showHistory() {
       }
     "
     ><h3>{{ binding?.name }}</h3>
-    <label class="field"
-      ><span>库存料卷</span
-      ><select v-model="spoolId">
-        <option value="">解绑 / 暂无料卷</option>
-        <option
-          v-for="s in store.spools.filter((s) => s.status !== 'archived')"
-          :key="s.id"
-          :value="s.id"
+    <div class="field">
+      <span id="binding-spool-label">库存料卷</span>
+      <SelectRoot
+        :model-value="spoolId || 'unbound'"
+        @update:model-value="spoolId = !$event || $event === 'unbound' ? '' : String($event)"
+      >
+        <SelectTrigger
+          class="color-filter-trigger binding-spool-trigger"
+          aria-labelledby="binding-spool-label"
         >
-          {{ s.product.brand }} {{ s.product.material }} {{ s.product.colorName }} · #{{
-            shortId(s.id)
-          }}
-          · {{ grams(s.remainingMg) }}g{{ s.installed.length ? ' · 已安装' : '' }}
-        </option>
-      </select></label
-    >
+          <template v-if="selectedSpool">
+            <span
+              class="color-filter-swatch"
+              :style="{ backgroundColor: selectedSpool.product.colorHex }"
+              aria-hidden="true"
+            />
+            <span class="binding-spool-label">
+              {{ selectedSpool.product.brand }} {{ selectedSpool.product.material }}
+              {{ selectedSpool.product.colorName }} · #{{ shortId(selectedSpool.id) }}
+            </span>
+          </template>
+          <span v-else>{{ spoolId ? '当前料卷不在可选库存中' : '解绑 / 暂无料卷' }}</span>
+          <ChevronDown :size="14" aria-hidden="true" />
+        </SelectTrigger>
+        <SelectPortal>
+          <SelectContent
+            class="color-filter-options binding-spool-options"
+            position="popper"
+            :side-offset="6"
+          >
+            <SelectViewport>
+              <SelectItem value="unbound" class="color-filter-option">
+                <SelectItemText>解绑 / 暂无料卷</SelectItemText>
+                <SelectItemIndicator class="color-filter-check"
+                  ><Check :size="14"
+                /></SelectItemIndicator>
+              </SelectItem>
+              <SelectItem
+                v-for="spool in bindingSpools"
+                :key="spool.id"
+                :value="spool.id"
+                class="color-filter-option"
+              >
+                <span
+                  class="color-filter-swatch"
+                  :style="{ backgroundColor: spool.product.colorHex }"
+                  aria-hidden="true"
+                />
+                <SelectItemText class="binding-spool-label">
+                  {{ spool.product.brand }} {{ spool.product.material }}
+                  {{ spool.product.colorName }}
+                  <small>
+                    #{{ shortId(spool.id) }} · {{ grams(spool.remainingMg) }}&nbsp;g{{
+                      spool.installed.length ? ' · 已安装' : ''
+                    }}
+                  </small>
+                </SelectItemText>
+                <SelectItemIndicator class="color-filter-check"
+                  ><Check :size="14"
+                /></SelectItemIndicator>
+              </SelectItem>
+            </SelectViewport>
+          </SelectContent>
+        </SelectPortal>
+      </SelectRoot>
+    </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
     <template #footer
       ><button class="button" @click="binding = null">取消</button
@@ -277,7 +457,12 @@ async function showHistory() {
     ><form id="slot-form" class="form-grid" @submit.prevent="addSlot">
       <label class="field full"
         ><span>来源名称 *</span
-        ><input v-model="slot.name" required placeholder="例如 AMS 1 · 槽位 1" /></label
+        ><input
+          v-model="slot.name"
+          required
+          :placeholder="
+            slotPrinter?.model === 'A1 mini' ? '例如 外挂料盘' : '例如 AMS 1 · 槽位 1'
+          " /></label
       ><label class="field"
         ><span>类型</span
         ><select v-model="slot.kind">
@@ -286,7 +471,7 @@ async function showHistory() {
           <option value="external">外置料卷</option>
           <option value="unknown">其他 / 待确认</option>
         </select></label
-      ><label class="field"
+      ><label v-if="slotPrinter?.model !== 'A1 mini'" class="field"
         ><span>手动指定喷嘴</span
         ><select v-model="slot.extruderId">
           <option value="">未确认</option>

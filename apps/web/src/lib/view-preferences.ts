@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue';
+import { ref, watch, type Ref } from 'vue';
 import type { ZodType } from 'zod';
 
 export function useViewPreference<T>(key: string, schema: ZodType<T>) {
@@ -23,4 +23,22 @@ export function useViewPreference<T>(key: string, schema: ZodType<T>) {
     { flush: 'sync' },
   );
   return preference;
+}
+
+export function filterChip<T extends string>(
+  key: string,
+  selection: Ref<T>,
+  defaultValue: T,
+  label: string = selection.value,
+) {
+  if (selection.value === defaultValue) return [];
+  return [
+    {
+      key,
+      label,
+      clear: () => {
+        selection.value = defaultValue;
+      },
+    },
+  ];
 }

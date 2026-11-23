@@ -12,12 +12,14 @@ import {
   Box,
   CheckCheck,
   CalendarDays,
+  ListChecks,
   ChevronRight,
 } from 'lucide-vue-next';
 import { useWorkspace } from '../lib/store';
 import { weight, grams, date, dayKey } from '../lib/format';
 import { printLabels } from '../../../../packages/shared/src';
 import PageHeading from '../components/PageHeading.vue';
+import ModelThumbnail from '../components/ModelThumbnail.vue';
 import MetricCard from '../components/MetricCard.vue';
 import SpoolIcon from '../components/SpoolIcon.vue';
 import EmptyState from '../components/EmptyState.vue';
@@ -74,7 +76,15 @@ const greeting = computed(() =>
       <Layers3 :size="16" />管理耗材
     </button>
   </PageHeading>
-  <RouterLink v-if="store.spoolSync" class="comparison-link" to="/settings#comparison">
+  <RouterLink
+    v-if="store.spoolSync"
+    class="comparison-link"
+    :class="{ settled: !store.pendingDifferences }"
+    to="/settings#comparison"
+  >
+    <span class="comparison-symbol" aria-hidden="true"
+      ><ListChecks v-if="store.pendingDifferences" :size="19" /><CheckCheck v-else :size="17"
+    /></span>
     <div class="grow">
       <strong
         >库存对照 ·
@@ -83,7 +93,9 @@ const greeting = computed(() =>
         }}</strong
       ><small>最近对照 {{ date(store.spoolSync.comparedAt, store.data?.settings.timezone) }}</small>
     </div>
-    {{ store.pendingDifferences ? '继续处理' : '查看结果' }} <ArrowRight :size="16" />
+    <span class="comparison-action"
+      >{{ store.pendingDifferences ? '继续处理' : '查看结果' }} <ArrowRight :size="15"
+    /></span>
   </RouterLink>
   <div class="stat-grid">
     <MetricCard
@@ -107,13 +119,7 @@ const greeting = computed(() =>
       unit="g"
       note="含更正与撤销流水"
     />
-    <MetricCard
-      class="highlighted"
-      label="待核对任务"
-      :icon="Clock3"
-      :value="pending.length"
-      unit="项"
-    >
+    <MetricCard label="待核对任务" :icon="Clock3" :value="pending.length" unit="项">
       <RouterLink class="stat-link" to="/jobs">查看任务<ArrowRight :size="14" /></RouterLink>
     </MetricCard>
   </div>
@@ -131,15 +137,7 @@ const greeting = computed(() =>
         </div>
         <div v-if="pending.length" class="pending-list">
           <div v-for="j in pending.slice(0, 4)" :key="j.id" class="pending-row">
-            <div class="model-thumbnail">
-              <img
-                v-if="j.thumbnail"
-                :src="j.thumbnail"
-                alt=""
-                loading="lazy"
-                referrerpolicy="no-referrer"
-              /><Box v-else :size="24" stroke-width="1.5" />
-            </div>
+            <ModelThumbnail :job="j" />
             <div class="grow">
               <strong>{{ j.name }}</strong><small
                 >{{ j.printerName || '设备未关联' }} <span>·</span>
@@ -207,7 +205,7 @@ const greeting = computed(() =>
                     >{{ printLabels[j.printStatus] }}</span
                   >
                 </td>
-                <td class="align-right">
+                <td class="align-right recent-print-weight">
                   {{ j.totalMg === null ? '待补充' : grams(j.totalMg) + ' g' }}
                 </td>
               </tr>
